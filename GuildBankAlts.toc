@@ -1,0 +1,43 @@
+## Interface: 16001
+## Title: Guild Bank Alts
+## Notes: Use characters of your guild as its bank: every member with the addon sees what they hold in the guild window and requests items from them.
+## Notes-deDE: Nutze Charaktere deiner Gilde als Gildenbank: Jedes Mitglied mit dem Addon sieht im Gildenfenster, was sie besitzen, und fordert Gegenstände bei ihnen an.
+## Notes-esES: Usa personajes de tu hermandad como su banco: cada miembro con el addon ve en la ventana de hermandad lo que guardan y les solicita objetos.
+## Notes-esMX: Usa personajes de tu hermandad como su banco: cada miembro con el addon ve en la ventana de hermandad lo que guardan y les solicita objetos.
+## Notes-frFR: Utilisez des personnages de votre guilde comme banque : chaque membre équipé de l'add-on voit dans la fenêtre de guilde ce qu'ils possèdent et leur demande des objets.
+## Notes-itIT: Usa personaggi della tua gilda come sua banca: ogni membro con l'add-on vede nella finestra della gilda cosa custodiscono e chiede loro oggetti.
+## Notes-koKR: 길드 캐릭터를 길드 은행으로 사용합니다: 애드온을 쓰는 모든 길드원이 길드 창에서 보유 물품을 보고 아이템을 요청할 수 있습니다.
+## Notes-ptBR: Use personagens da sua guilda como banco: cada membro com o addon vê na janela da guilda o que eles guardam e solicita itens a eles.
+## Notes-ruRU: Используйте персонажей гильдии как её банк: каждый участник с модификацией видит в окне гильдии, что у них хранится, и запрашивает у них предметы.
+## Notes-zhCN: 将公会角色用作公会银行：每位安装本插件的成员都能在公会窗口中查看他们持有的物品并向其申请物品。
+## Notes-zhTW: 將公會角色作為公會銀行：每位安裝本插件的成員都能在公會視窗中查看他們持有的物品並向其申請物品。
+## Author: Nedyar
+## Version: 0.1.0
+## SavedVariables: GuildBankAltsDB
+## IconTexture: Interface\Icons\INV_Misc_Bag_10
+
+Locales\Locales.lua
+Locales\deDE.lua
+Locales\esES.lua
+Locales\frFR.lua
+Locales\itIT.lua
+Locales\koKR.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
+
+Core.lua
+Pack.lua
+Data.lua
+Comm.lua
+Roster.lua
+Ranks.lua
+Bank.lua
+Requests.lua
+Deliveries.lua
+Sync.lua
+BankView.lua
+RequestForm.lua
+RequestList.lua
+GuildTab.lua
