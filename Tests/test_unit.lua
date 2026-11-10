@@ -178,6 +178,8 @@ H.check(changelog ~= nil and changelog:match("## ([%d%.]+)") == tocVersion, "the
 local pkgmeta = Read(".pkgmeta")
 H.check(pkgmeta ~= nil and pkgmeta:find("package%-as: GuildBankAlts") ~= nil, ".pkgmeta packages the folder as GuildBankAlts")
 H.check(pkgmeta ~= nil and pkgmeta:find("\n    %- Tests\n") ~= nil, ".pkgmeta leaves the tests out of the package")
+H.check(pkgmeta ~= nil and pkgmeta:find("required%-dependencies:\n    %- lib%-guild%-sync\n") ~= nil,
+    ".pkgmeta makes LibGuildSync a required relation on CurseForge")
 H.check(toc:find("## SavedVariables: GuildBankAltsDB", 1, true) ~= nil, "the saved variables are declared")
 H.check(toc:find("## Dependencies: LibGuildSync", 1, true) ~= nil, "LibGuildSync is a dependency")
 for _, file in ipairs(H.FILES) do

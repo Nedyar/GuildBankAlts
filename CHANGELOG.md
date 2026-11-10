@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 - On the guild addons' shared library
+
+- **Now needs LibGuildSync**, the shared code of the guild addons: hidden addon messages, the guild roster, the saved data and the sync. The CurseForge app installs it with Guild Bank Alts; by hand, copy its folder too.
+- **Nobody has to update at once**: members on 0.1.0 and on 0.2.0 keep sharing everything.
+- **A shorter hint under the Guild Bank tab**: in some languages it took three lines and spilled out of the window.
+
 ## 0.1.0 - First release
 
 - **A guild bank on characters**: characters with the guild rank `Banco` (or `Bank`) share their money, bags and bank, slot by slot, with every guild member who runs the addon.
