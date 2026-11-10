@@ -7,6 +7,13 @@ keep their bank on ordinary characters, the guild's bank alts. Every guild
 member with the addon sees what those characters hold in a tab of the guild
 window, and asks them for items.
 
+> **Everything is done by hand.** The bank characters are managed entirely
+> by the players who log in with them: the addon automates nothing. It never
+> moves, trades or mails items, never accepts or sends anything on its own,
+> and never sets the cash on delivery of a mail. It only shows what the bank
+> characters hold, keeps the list of requests, and notices the trades and
+> mails their players make, to count them toward the requests.
+
 - **Bank characters.** A character with the guild rank `Banco` (or `Bank`,
   in any case) shares its money and its bags, slot by slot with the bag in
   each bag slot, whenever they change. The game only lets an addon read the
@@ -22,29 +29,31 @@ window, and asks them for items.
   last seen by any member who opened it) and the character's, in gold,
   silver and copper. The clock between them tells when each was last seen.
 - **Requests.** Right-click an item to request it: how many, how you want
-  it, and an optional note. **In person**: you collect the items at the bank
-  of the city where the bank character is, for free. **By mail**: the bank
-  character mails them, and the postage, 30 copper per stack, is charged
-  cash on delivery. The Requests subtab lists every request, with where it
-  stands and how it is to be delivered.
+  it, and an optional note. **In person**: you go to the bank of the city
+  where the bank character is, and its player trades you the items, for
+  free. **By mail**: the bank character's player sends you the items by
+  mail, setting the cash on delivery by hand: the postage, 30 copper per
+  stack. A request is only a note for the bank character's player: nothing
+  is delivered until that player does it by hand. The Requests subtab lists
+  every request, with where it stands and how it is to be delivered.
   - Its maker can delete a request until it is approved.
   - A bank character, an officer (rank `Oficial` or `Officer`) or the guild
     master can reject it while it is open.
-  - A request is **approved** once the bank characters have handed over all
-    its items, by trade or by mail, in as many goes as it takes (until
-    then it shows "10/20 delivered"). The bank character's addon counts
-    what it gives to whoever asked for it; nothing else is needed. From
-    then on, the request can neither be deleted nor rejected.
+  - A request is marked **approved** once the bank character's player has
+    handed over all its items, by trade or by mail, in as many goes as it
+    takes (until then it shows "10/20 delivered"): the bank character's
+    addon notices what its player gives to whoever asked for it and counts
+    it. From then on, the request can neither be deleted nor rejected.
   - Approved and rejected requests stay listed for a week.
 - **Notices.** A bank character is told in the chat of new requests and how
   to deliver them, and its tab shows the notification mark while requests
   wait for it. A member is told when their request is delivered, in part or
   in full, or rejected.
-- **Automatic sharing.** Everything goes to the rest of the guild through
-  hidden addon messages, which never appear in any chat window. When you
-  log in, a guild member who is online sends you whatever you are missing,
-  so as long as someone with the addon is online, everyone ends up with the
-  same data.
+- **Sharing in the background.** Everything goes to the rest of the guild
+  through hidden addon messages, which never appear in any chat window.
+  When you log in, a guild member who is online sends you whatever you are
+  missing, so as long as someone with the addon is online, everyone ends up
+  with the same data.
 - **Other addons' tabs.** Guild Professions & Recipes adds a tab to the
   guild window too. The two take turns: opening one closes the other, and
   they line up one under the other. Neither needs the other.
