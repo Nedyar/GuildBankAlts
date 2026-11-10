@@ -29,6 +29,11 @@ local RESTAMP = 3600   -- an unchanged read is stamped again after this long
 local bankOpen, guildBankOpen = false, false
 Bank.ready = false  -- our record is up to date (see Bank.Update)
 
+-- The sync announces our record once it is up to date.
+function ns.Sync.OwnReady()
+    return Bank.ready
+end
+
 -- Reading ------------------------------------------------------------------------------
 
 -- "item:19019:1900:0:0:0:0:0:1234567:60:0:..." -> the same without the

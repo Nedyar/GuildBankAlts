@@ -63,7 +63,9 @@ window, and asks them for items.
 
 ## Installing
 
-Copy the `GuildBankAlts` folder into
+The addon needs **LibGuildSync**, the shared code of the guild addons; the
+CurseForge app installs it with Guild Bank Alts. By hand, copy both the
+`GuildBankAlts` and `LibGuildSync` folders into
 `World of Warcraft\_forever_\Interface\AddOns\`. Give the bank characters
 the guild rank `Banco` (or `Bank`), and log in with each of them once with
 the addon; open each one's bank once so its bank is shared too.
@@ -80,15 +82,18 @@ the addon; open each one's bank once so its bank is shared too.
 
 ## Tests
 
-The tests run outside the game with Lua 5.1, from the addon folder:
+The tests run outside the game with Lua 5.1, from the addon folder, with
+LibGuildSync's folder next to it (its harness and its files are used):
 
 ```
 lua5.1 Tests\run.lua . Tests
 ```
 
-They load the addon's real files into simulated clients that talk through a
-simulated server, with bags, banks, trades and mail, and check the sync, the
-saved data, the requests and the guild window tab.
+They load LibGuildSync's and the addon's real files into simulated clients
+that talk through a simulated server, with bags, banks, trades and mail, and
+check the sync, the saved data, the requests and the guild window tab. One
+test puts members on the last release (taken from its git tag) in the same
+guild as members on this version.
 
 ## Releasing
 
@@ -97,8 +102,9 @@ CurseForge packages every tagged commit pushed here.
 
 1. Raise `## Version` in `GuildBankAlts.toc` and add that version's entry
    at the top of `CHANGELOG.md`. The tests check that both match. If
-   `ns.TRIAL` is on in `Core.lua` (a new protocol tried in game on a prefix
-   of its own), turn it off: the tests print a note while it is on.
+   `trial = true` is in `Core.lua`'s configuration (a new protocol tried in
+   game on a prefix of its own), turn it off: the tests print a note while
+   it is on.
 2. Commit, tag the commit `v<version>` and push the tag:
    `git push origin v<version>`. A tag containing `beta` or `alpha` makes a
    beta or alpha file instead of a release.

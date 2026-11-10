@@ -295,7 +295,7 @@ local function CreatePage()
     page.Hint:SetPoint("RIGHT", page.Content, "BOTTOMRIGHT", -4, -15)
     page.Hint:SetJustifyH("LEFT")
     page.Hint:SetText(L["Right-click an item to request it."] .. "\n"
-        .. L["Requests sent by mail are charged %s per stack, cash on delivery; collected in person, they are free."]
+        .. L["By mail: %s per stack, cash on delivery. In person: free."]
             :format(ns.BankView.Coin(ns.Requests.MAIL_FEE, "Copper")))
     page.OnlyOpen = FilterCheck(L["Only open requests"], onlyOpen, function(checked)
         onlyOpen = checked

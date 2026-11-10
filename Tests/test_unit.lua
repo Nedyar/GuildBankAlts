@@ -15,30 +15,6 @@ for _, err in ipairs(world.errors) do
     print("   " .. err)
 end
 
-H.section("Pack: numbers")
-for _, value in ipairs({ 0, 1, 127, 128, 255, 16383, 16384, 2 ^ 21, 1306126, 2 ^ 31, 2 ^ 40, 2 ^ 53 - 1 }) do
-    local writer = Pack.Writer()
-    writer:UInt(value)
-    local reader = Pack.Reader(writer:Result())
-    H.eq(reader:UInt(), value, "uint round trip " .. value)
-    H.check(reader:AtEnd(), "uint fully read " .. value)
-end
-for _, value in ipairs({ 0, 1, -1, 63, -64, 64, 1000000, -1000000, 2 ^ 40, -(2 ^ 40) }) do
-    local writer = Pack.Writer()
-    writer:Int(value)
-    H.eq(Pack.Reader(writer:Result()):Int(), value, "int round trip " .. value)
-end
-H.check(not pcall(function() Pack.Writer():UInt(-1) end), "negative uint refused")
-H.check(not pcall(function() Pack.Reader(""):UInt() end), "truncated number refused")
-H.check(not pcall(function() Pack.Reader(("\128"):rep(9)):UInt() end), "overlong number refused")
-H.check(not pcall(function() Pack.Reader("\5ab"):Str() end), "truncated text refused")
-H.check(not pcall(function() Pack.Reader("\100" .. ("x"):rep(100)):Str() end), "text over the limit refused")
-for _, text in ipairs({ "", "a", "ab", "abc", "\0\255\128", ("xyz"):rep(50) }) do
-    H.eq(Pack.FromBase64(Pack.ToBase64(text)), text, "Base64 round trip of " .. #text .. " bytes")
-end
-H.eq(Pack.FromBase64("abc"), nil, "Base64 of a wrong length refused")
-H.eq(Pack.FromBase64("a=bc"), nil, "Base64 padding in the middle refused")
-
 H.section("Pack: records")
 local GUID, OTHER = "Player-1-0000000A", "Player-1-0000000B"
 local record = {
@@ -203,9 +179,10 @@ local pkgmeta = Read(".pkgmeta")
 H.check(pkgmeta ~= nil and pkgmeta:find("package%-as: GuildBankAlts") ~= nil, ".pkgmeta packages the folder as GuildBankAlts")
 H.check(pkgmeta ~= nil and pkgmeta:find("\n    %- Tests\n") ~= nil, ".pkgmeta leaves the tests out of the package")
 H.check(toc:find("## SavedVariables: GuildBankAltsDB", 1, true) ~= nil, "the saved variables are declared")
+H.check(toc:find("## Dependencies: LibGuildSync", 1, true) ~= nil, "LibGuildSync is a dependency")
 for _, file in ipairs(H.FILES) do
     H.check(Read(file) ~= nil, "the TOC's file exists: " .. file)
 end
-if Read("Core.lua"):find("\nns.TRIAL = true", 1, true) then
-    print("  NOTE: ns.TRIAL is on in Core.lua: turn it off before tagging a release")
+if Read("Core.lua"):find("\n    trial = true,", 1, true) then
+    print("  NOTE: trial is on in Core.lua: turn it off before tagging a release")
 end

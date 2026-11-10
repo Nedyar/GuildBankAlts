@@ -529,8 +529,19 @@ slot._scripts.OnClick(slot, "RightButton")
 H.check(form.ByMail:GetChecked(), "the next form starts with the last choice")
 form.Cancel._scripts.OnClick(form.Cancel)
 H.check(page.Hint:GetText():find("Right-click an item to request it.", 1, true) ~= nil
-    and page.Hint:GetText():find("charged 30|TInterface\\MoneyFrame\\UI-CopperIcon", 1, true) ~= nil
-    and page.Hint:GetText():find("in person, they are free", 1, true) ~= nil, "the hint tells what the mail costs")
+    and page.Hint:GetText():find("By mail: 30|TInterface\\MoneyFrame\\UI-CopperIcon", 1, true) ~= nil
+    and page.Hint:GetText():find("In person: free.", 1, true) ~= nil, "the hint tells what the mail costs")
+-- Under the window's inset there is room for two lines: each line of the
+-- hint must fit on one, in every language (Spanish once took three).
+for _, locale in ipairs({ "deDE", "esES", "frFR", "itIT", "koKR", "ptBR", "ruRU", "zhCN", "zhTW" }) do
+    local texts = {}
+    local chunk = assert(loadfile(H.ADDON .. "/Locales/" .. locale .. ".lua"))
+    chunk("GuildBankAlts", { RegisterLocale = function(_, fill) fill(texts) end })
+    for _, key in ipairs({ "Right-click an item to request it.", "By mail: %s per stack, cash on delivery. In person: free." }) do
+        local characters = select(2, (texts[key] or ""):gsub("[^\128-\191]", ""))
+        H.check(texts[key] ~= nil and characters <= 75, ("%s: the hint line is short (%d characters): %s"):format(locale, characters, key))
+    end
+end
 -- Our own bank cannot be requested from.
 world:RunFor(150)
 local bankEnv = bank.env
