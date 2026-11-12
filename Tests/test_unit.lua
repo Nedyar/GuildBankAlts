@@ -185,6 +185,10 @@ H.check(toc:find("## Dependencies: LibGuildSync", 1, true) ~= nil, "LibGuildSync
 for _, file in ipairs(H.FILES) do
     H.check(Read(file) ~= nil, "the TOC's file exists: " .. file)
 end
+local announced = Read("Core.lua"):match('\nlocal ANNOUNCE_AS = "([%d%.]+)"')
+if announced then
+    print(("  NOTE: Core.lua tells the guild this is %s: set ANNOUNCE_AS to nil before tagging a release"):format(announced))
+end
 if Read("Core.lua"):find("\n    trial = true,", 1, true) then
     print("  NOTE: trial is on in Core.lua: turn it off before tagging a release")
 end

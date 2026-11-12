@@ -7,12 +7,15 @@ keep their bank on ordinary characters, the guild's bank alts. Every guild
 member with the addon sees what those characters hold in a tab of the guild
 window, and asks them for items.
 
-> **Everything is done by hand.** The bank characters are managed entirely
-> by the players who log in with them: the addon automates nothing. It never
-> moves, trades or mails items, never accepts or sends anything on its own,
-> and never sets the cash on delivery of a mail. It only shows what the bank
+> **The players do the delivering.** The bank characters are managed by
+> the players who log in with them. The addon never trades, never sends a
+> mail and never accepts anything on its own. It shows what the bank
 > characters hold, keeps the list of requests, and notices the trades and
-> mails their players make, to count them toward the requests.
+> mails their players make, to count them toward the requests and write
+> them in the bank's log. At their player's click it only gets things ready:
+> a request's items from the bank to the bags, or into a mail with its
+> recipient and cash on delivery, and the Send items button's mail to a
+> bank character. The player checks the mail and sends it.
 
 - **Bank characters.** A character with the guild rank `Banco` (or `Bank`,
   in any case) shares its money and its bags, slot by slot with the bag in
@@ -28,6 +31,11 @@ window, and asks them for items.
   down to fit), a search box, then the money of the game's guild bank (as
   last seen by any member who opened it) and the character's, in gold,
   silver and copper. The clock between them tells when each was last seen.
+  Under it, **Send items** gets a mail to that bank character ready: the
+  mailbox's Send tab with its name as the recipient, for you to attach what
+  you send to the bank. The game lets no addon open a mailbox, so with none
+  open the button waits a few minutes for you to open one (with your
+  Interact key, or a right-click on it).
 - **Requests.** Right-click an item to request it: how many, how you want
   it, and an optional note. **In person**: you go to the bank of the city
   where the bank character is, and its player trades you the items, for
@@ -35,7 +43,8 @@ window, and asks them for items.
   mail, setting the cash on delivery by hand: the postage, 30 copper per
   stack. A request is only a note for the bank character's player: nothing
   is delivered until that player does it by hand. The Requests subtab lists
-  every request, with where it stands and how it is to be delivered.
+  every request, oldest first, with where it stands and how it is to be
+  delivered.
   - Its maker can delete a request until it is approved.
   - A bank character, an officer (rank `Oficial` or `Officer`) or the guild
     master can reject it while it is open.
@@ -45,6 +54,64 @@ window, and asks them for items.
     addon notices what its player gives to whoever asked for it and counts
     it. From then on, the request can neither be deleted nor rejected.
   - Approved and rejected requests stay listed for a week.
+  - **Getting a request ready.** Logged in with the bank character, the
+    open requests made to it have two more buttons: **Prepare**, and
+    **Mail** for those by mail. Each is enabled only when it can do its
+    part; its tooltip says what it does, or why it cannot (bank closed, not
+    enough items, no room, a mail already holding items...).
+    - **Prepare** keeps for the request in the bags the stacks it still
+      lacks, in the fewest stacks: stacks already in the bags and kept for
+      no request, as they are or split, and, with the bank open, the rest
+      from the bank, each into an empty slot, so every request's items stay
+      in stacks of their own. Without the bank, it is enabled when the bags
+      hold enough kept for no request. If the bags lack the empty slots it
+      takes, it is not enabled. It never takes another request's kept
+      stacks, nor brings what another request lacks. Once the request keeps
+      stacks and Prepare can add no more (it is ready, or the rest is not
+      to be had now), the button is **Release**: it lets go of them, for
+      other requests to take; nothing moves.
+    - **Mail**, at a mailbox, makes a mail ready on the Send tab: the items
+      in the fewest stacks (partial stacks merged, the rest split off), as
+      many as one mail takes (12 stacks), the requester as the recipient,
+      "Request: [item] x[count]" as the subject (the item's name cut to fit
+      the subject box if need be; the body is left alone), and cash on
+      delivery of 30 copper per stack; press it again once it is sent for
+      the rest. It takes the stacks kept for the request or for
+      none, never another request's. Then check the mail and send it.
+  - **Kept stacks.** A stack kept for a request shows a padlock in the top
+    right corner of its icon in the game's bags; the padlock's tooltip says
+    for which request. Moved within the bags, the stack stays kept and the
+    padlock goes with it. Split, added to (by hand, or by the game stacking
+    loot or mail onto it) or taken out of the bags (traded, mailed, back in
+    the bank), it is let go and the padlock goes away; so are the stacks of
+    a request once it is no longer open. Press Prepare again to keep what it
+    lacks once more.
+- **The log.** The Log subtab lists what came into the bank and what went
+  out of it, newest first, one line per entry in the words of the game's
+  own guild bank log ("Name deposited [Item] x 5 ( 3 hours ago )"). It
+  joins two logs, told apart by a tag at the start of each line:
+  - **the bank characters'** (blue tag, with the character's name): every
+    item and every coin a bank character trades or mails, both ways, and
+    with whom: by trade, by mail (sent, or taken from its mailbox, the
+    auction house's mail too), the cash on delivery and the postage it
+    pays, its mail that comes back, and the money it puts into the guild vault or takes from
+    it. Its own client writes them down as they happen;
+  - **the guild vault's** (green tag): the game's own guild bank. When any
+    member opens it, its log, items (the tabs they may see) and money, is
+    read and shared. The game only keeps its last entries; the guild keeps
+    what its members read before, so the log reaches further back. The same
+    entry read by several members shows once.
+
+  Pointing at a money line shows how much the bank character, or the
+  guild vault, had before and after it (the vault's is worked out from
+  what it holds when its log is read). A bank character's money put into
+  the vault or taken from it shows once, as the vault's line, with both:
+  the vault's money and the bank character's. At an item line, the item.
+  Both tell the date and time it happened (the vault's only roughly, to
+  the hour, unless a bank character told it). Nobody can change or delete
+  an entry, not even the bank character that wrote it: the log is only
+  ever added to. Under the list, filters show or hide items, money, the
+  bank characters' entries and the guild vault's.
 - **Notices.** A bank character is told in the chat of new requests and how
   to deliver them, and its tab shows the notification mark while requests
   wait for it. A member is told when their request is delivered, in part or
@@ -90,8 +157,9 @@ lua5.1 Tests\run.lua . Tests
 ```
 
 They load LibGuildSync's and the addon's real files into simulated clients
-that talk through a simulated server, with bags, banks, trades and mail, and
-check the sync, the saved data, the requests and the guild window tab. One
+that talk through a simulated server, with bags, banks, trades, mail and the
+guild vault's log, and check the sync, the saved data, the requests, the
+bank's log and the guild window tab. One
 test puts members on the last release (taken from its git tag) in the same
 guild as members on this version.
 
@@ -103,8 +171,9 @@ CurseForge packages every tagged commit pushed here.
 1. Raise `## Version` in `GuildBankAlts.toc` and add that version's entry
    at the top of `CHANGELOG.md`. The tests check that both match. If
    `trial = true` is in `Core.lua`'s configuration (a new protocol tried in
-   game on a prefix of its own), turn it off: the tests print a note while
-   it is on.
+   game on a prefix of its own), turn it off; if `ANNOUNCE_AS` is set (a
+   version tried in game while telling the guild it is the last release),
+   set it to nil. The tests print a note while either is on.
 2. Commit, tag the commit `v<version>` and push the tag:
    `git push origin v<version>`. A tag containing `beta` or `alpha` makes a
    beta or alpha file instead of a release.

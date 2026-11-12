@@ -27,6 +27,12 @@ local SCAN_DELAY = 2
 local RESTAMP = 3600   -- an unchanged read is stamped again after this long
 
 local bankOpen, guildBankOpen = false, false
+
+-- Whether our bank is open (its items can be read and moved).
+function Bank.IsBankOpen()
+    return bankOpen
+end
+
 Bank.ready = false  -- our record is up to date (see Bank.Update)
 
 -- The sync announces our record once it is up to date.
@@ -127,10 +133,18 @@ local function EquippedBag(bag)
     return Bank.ItemString(link)
 end
 
+-- Our bags' containers: the backpack, the bag slots and the reagent bag.
+function Bank.BagIDs()
+    local ids = {}
+    for bag = BACKPACK_CONTAINER or 0, (NUM_BAG_SLOTS or 4) + (NUM_REAGENTBAG_SLOTS or 0) do
+        ids[#ids + 1] = bag
+    end
+    return ids
+end
+
 local function ReadBags()
     local containers, slots = {}, 0
-    local last = (NUM_BAG_SLOTS or 4) + (NUM_REAGENTBAG_SLOTS or 0)
-    for bag = BACKPACK_CONTAINER or 0, last do
+    for _, bag in ipairs(Bank.BagIDs()) do
         local container = ReadContainer(bag)
         if bag > 0 then
             container.bi = EquippedBag(bag)
@@ -141,8 +155,9 @@ local function ReadBags()
     return containers, slots
 end
 
--- The bank: its own slots, then each bank bag slot, bought or not.
-local function ReadBank()
+-- The bank's tabs: its own slots, then each bank bag slot, as
+-- { index, bag = its container, bought }.
+local function BankTabs()
     local bankType = Enum.BankType and Enum.BankType.Character or 0
     local bought = {}
     local tabs = C_Bank and ns.Try(C_Bank.FetchPurchasedBankTabData, bankType)
@@ -153,12 +168,32 @@ local function ReadBank()
     end
     local first = (ITEM_INVENTORY_BANK_BAG_OFFSET or 5) + 1
     local maxTabs = C_Bank and ns.Number(ns.Try(C_Bank.FetchMaxNumBankTabs, bankType)) or NUM_CHARACTER_BANK_SLOTS or 9
+    local list = {}
+    for index = 1, math.min(maxTabs, LIMITS.containers) do
+        list[index] = { index = index, bag = bought[index] or (first + index - 1), bought = index == 1 or bought[index] ~= nil }
+    end
+    return list
+end
+
+-- The bank's containers that hold items (while it is open).
+function Bank.BankIDs()
+    local ids = {}
+    for _, tab in ipairs(BankTabs()) do
+        if tab.bought then
+            ids[#ids + 1] = tab.bag
+        end
+    end
+    return ids
+end
+
+-- The bank: its own slots, then each bank bag slot, bought or not.
+local function ReadBank()
     local bagHolder = Enum.BagIndex and Enum.BagIndex.Characterbanktab or -2
     local containers, slots = {}, 0
-    for index = 1, math.min(maxTabs, LIMITS.containers) do
-        local bag = bought[index] or (first + index - 1)
+    for _, tab in ipairs(BankTabs()) do
+        local index, bag = tab.index, tab.bag
         local container
-        if index == 1 or bought[index] then
+        if tab.bought then
             container = ReadContainer(bag)
             slots = slots + container.z
         else
@@ -288,6 +323,8 @@ local function OpenGuildBank()
     for _, delay in ipairs(GUILD_MONEY_READS) do
         C_Timer.After(delay, Bank.UpdateGuildMoney)
     end
+    -- Its log is read too (Log.lua).
+    ns.Fire("GuildBankOpened")
 end
 
 local function CloseGuildBank()
@@ -295,6 +332,7 @@ local function CloseGuildBank()
         Bank.UpdateGuildMoney()
         guildBankOpen = false
     end
+    ns.Fire("GuildBankClosed")
 end
 
 function Bank.Init()

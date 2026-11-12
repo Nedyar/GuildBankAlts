@@ -15,6 +15,17 @@ Pack.LIMITS = {
     answers = 150,   -- requests one member answered
     quantity = 10000,
     note = 120,      -- bytes of a request's note
+    log = 100,       -- entries of a bank character's log
+    guildLog = 100,  -- entries of the guild vault's log a member keeps
+    logCount = 1000000, -- items of one kind in a log entry
+    tabs = 8,        -- the guild vault's tabs
+}
+
+-- The types of the guild vault's log entries (gl), by the names the game
+-- gives them.
+Pack.VAULT_TYPES = {
+    deposit = 1, withdraw = 2, move = 3, repair = 4, withdrawForTab = 5, buyTab = 6, depositSummary = 7, buyRename = 8,
+    refundRename = 9,
 }
 
 -- Records --------------------------------------------------------------------
@@ -37,9 +48,24 @@ Pack.LIMITS = {
 --       d = 1 in person / 2 by mail } },
 --   ra = the member's answers to other members' requests:
 --       { ["<requester GUID>:<id>"] = { s = 1 rejected / 2 delivering,
---       n = items delivered, u = when it last changed } }.
--- rq and ra are nil until known: a client that lost its data does not tell
--- the guild it has none.
+--       n = items delivered, u = when it last changed } },
+--   lg = a bank character's log: what it traded and mailed (see Log.lua),
+--       oldest first: { { t = when, a = 1 in / 2 out, v = 1 by trade /
+--       2 by mail / 3 cash on delivery / 4 returned mail / 5 at the guild
+--       vault (money it put in or took out; w = "") / 6 postage it
+--       paid (w = the mail's recipient), w = the other
+--       side's name ("" when unknown), then either i = item ID, n = count,
+--       s = item string or nil, or m = copper, r = the copper the bank
+--       character had left after it (nil: unknown) }... },
+--   gl = the guild vault's own log, as the member last read it at a guild
+--       vault, together with what the guild knew of it then: { t = when it
+--       was read, tn = { the vault's tab names }, e = { { t = when (to the
+--       hour), y = type (Log.VAULT_TYPES), w = name, then either i, n, s,
+--       b = tab (the tab moved from), d = the tab moved to, or
+--       m = copper, r = the vault's copper after it (nil: unknown) }... } },
+--       oldest first.
+-- rq, ra and lg are nil until known: a client that lost its data does not
+-- tell the guild it has none.
 -- A packed record is prefixed by its length, so fields added later are
 -- skipped by older readers.
 local ABSENT, PRESENT = 0, 1
@@ -224,6 +250,127 @@ local function ReadAnswers(reader)
     return answers
 end
 
+-- Logs: oldest first, each time written as the gap from the one before,
+-- which most often fits in one or two bytes.
+local function WriteWhat(writer, entry)
+    writer:UInt(entry.i or 0)
+    if entry.i then
+        writer:UInt(entry.n)
+        writer:Str(entry.s or "")
+    else
+        writer:UInt(entry.m)
+        -- The money left, plus one: 0 is unknown.
+        writer:UInt(entry.r and entry.r + 1 or 0)
+    end
+end
+
+local function ReadWhat(reader, entry)
+    local itemID = reader:UInt()
+    if itemID > 0 then
+        entry.i, entry.n = itemID, reader:UInt()
+        local text = reader:Str(LIMITS.item)
+        entry.s = text ~= "" and text or nil
+    else
+        entry.m = reader:UInt()
+        local left = reader:UInt()
+        entry.r = left > 0 and left - 1 or nil
+    end
+end
+
+local function WriteLog(writer, log)
+    if not log then
+        writer:UInt(0)
+        return
+    end
+    writer:UInt(#log + 1)
+    local previous = 0
+    for _, entry in ipairs(log) do
+        writer:UInt(math.max(entry.t - previous, 0))
+        previous = math.max(entry.t, previous)
+        writer:Byte(entry.a)
+        writer:Byte(entry.v)
+        writer:Str(entry.w or "")
+        WriteWhat(writer, entry)
+    end
+end
+
+local function ReadLog(reader)
+    local count = reader:UInt()
+    if count == 0 then
+        return nil
+    elseif count - 1 > LIMITS.log then
+        error("too many log entries", 0)
+    end
+    local log, previous = {}, 0
+    for i = 1, count - 1 do
+        local entry = { t = previous + reader:UInt(), a = reader:Byte(), v = reader:Byte(), w = reader:Str(LIMITS.text) }
+        previous = entry.t
+        ReadWhat(reader, entry)
+        log[i] = entry
+    end
+    return log
+end
+
+local function WriteGuildLog(writer, log)
+    if not log then
+        writer:Byte(ABSENT)
+        return
+    end
+    writer:Byte(PRESENT)
+    writer:UInt(log.t)
+    writer:UInt(#log.tn)
+    for _, name in ipairs(log.tn) do
+        writer:Str(name)
+    end
+    writer:UInt(#log.e)
+    local previous = 0
+    for _, entry in ipairs(log.e) do
+        writer:UInt(math.max(entry.t - previous, 0))
+        previous = math.max(entry.t, previous)
+        writer:Byte(entry.y)
+        writer:Str(entry.w or "")
+        WriteWhat(writer, entry)
+        if entry.i then
+            writer:Byte(entry.b or 0)
+            writer:Byte(entry.d or 0)
+        end
+    end
+end
+
+local function ReadGuildLog(reader)
+    local present = reader:Byte()
+    if present == ABSENT then
+        return nil
+    elseif present ~= PRESENT then
+        error("unknown guild log", 0)
+    end
+    local log = { t = reader:UInt(), tn = {}, e = {} }
+    local tabs = reader:UInt()
+    if tabs > LIMITS.tabs then
+        error("too many tabs", 0)
+    end
+    for i = 1, tabs do
+        log.tn[i] = reader:Str(LIMITS.text)
+    end
+    local count = reader:UInt()
+    if count > LIMITS.guildLog then
+        error("too many log entries", 0)
+    end
+    local previous = 0
+    for i = 1, count do
+        local entry = { t = previous + reader:UInt(), y = reader:Byte(), w = reader:Str(LIMITS.text) }
+        previous = entry.t
+        ReadWhat(reader, entry)
+        if entry.i then
+            local from, to = reader:Byte(), reader:Byte()
+            entry.b = from > 0 and from or nil
+            entry.d = to > 0 and to or nil
+        end
+        log.e[i] = entry
+    end
+    return log
+end
+
 -- The record's own bytes, without the length prefix.
 local function RecordBody(guid, record)
     local writer = Pack.Writer()
@@ -236,6 +383,9 @@ local function RecordBody(guid, record)
     WriteGuildMoney(writer, record.gb)
     WriteRequests(writer, record.rq)
     WriteAnswers(writer, record.ra)
+    -- Since 0.3.0: older readers skip them.
+    WriteLog(writer, record.lg)
+    WriteGuildLog(writer, record.gl)
     return writer:Result()
 end
 
@@ -243,12 +393,18 @@ function Pack.WriteRecord(writer, guid, record)
     writer:Str(RecordBody(guid, record))
 end
 
-local MAX_RECORD = 20000
+-- The most a packed record may weigh, in bytes. Every version refuses
+-- bigger ones, so it cannot grow.
+Pack.MAX_RECORD = 20000
+
+function Pack.RecordSize(guid, record)
+    return #RecordBody(guid, record)
+end
 
 -- Returns guid, record. The record still has to be checked (Data.CleanRecord).
 function Pack.ReadRecord(reader)
     local length = reader:UInt()
-    if length > MAX_RECORD then
+    if length > Pack.MAX_RECORD then
         error("record too long", 0)
     end
     reader = reader:Sub(length)
@@ -262,6 +418,11 @@ function Pack.ReadRecord(reader)
     record.gb = ReadGuildMoney(reader)
     record.rq = ReadRequests(reader)
     record.ra = ReadAnswers(reader)
+    -- Records packed before 0.3.0 end here.
+    if not reader:AtEnd() then
+        record.lg = ReadLog(reader)
+        record.gl = ReadGuildLog(reader)
+    end
     -- Anything left was added by a later version.
     return guid, record
 end

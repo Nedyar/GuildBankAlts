@@ -655,6 +655,11 @@ local function LayOut(view, entry, cells)
     end
 end
 
+-- The GUID of the bank character the subtab shows, or nil.
+function BankView.SelectedBank()
+    return selectedBank
+end
+
 function BankView.Refresh(view)
     if view.refreshing then
         return
@@ -693,6 +698,7 @@ function BankView.Refresh(view)
     view.Footer:SetShown(bank ~= nil)
     view.Empty:SetShown(bank == nil)
     view.refreshing = false
+    ns.MailToBank.Update()
 end
 
 function BankView.Init()

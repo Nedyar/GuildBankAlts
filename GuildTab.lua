@@ -1,7 +1,10 @@
 -- GuildTab.lua: a "Guild Bank" tab on the guild window, under Blizzard's
 -- own side tabs (Chat, Roster, Guild Info...). Its subtabs:
---   - Bank: what the guild's bank characters hold (BankView.lua);
---   - Requests: the members' withdrawal requests (RequestList.lua).
+--   - Bank: what the guild's bank characters hold (BankView.lua), and a
+--     button to mail the one shown (MailToBank.lua);
+--   - Requests: the members' withdrawal requests (RequestList.lua);
+--   - Log: what came into the bank and went out of it, the bank
+--     characters' and the guild vault's (LogView.lua).
 --
 -- It only hooks and reads Blizzard's frames, as Guild Professions & Recipes
 -- does with its own tab. It never changes the guild window's display mode,
@@ -37,10 +40,12 @@ local communities, tab, page
 local remembered     -- the Blizzard tab that was selected when our panel opened
 local hiddenChatBar  -- the chat's scroll bar, while our panel hides it
 local faded = {}     -- [Blizzard frame] = its alpha, while our panel hides it
-local SUBTABS = { "bank", "requests" }
+local SUBTABS = { "bank", "requests", "log" }
 local selected = 1
 -- The request list's filters.
 local onlyOpen, onlyMine = false, false
+-- The log's: what it shows.
+local logFilters = { items = true, money = true, banks = true, vault = true }
 
 -- The shared list -------------------------------------------------------------------
 
@@ -88,6 +93,7 @@ local function UpdateSubTabs()
     local texts = {
         L["Bank"],
         waiting > 0 and ("%s (%d)"):format(L["Requests"], waiting) or L["Requests"],
+        L["Log"],
     }
     for i, subtab in ipairs(page.SubTabs.Tabs) do
         subtab:SetText(texts[i])
@@ -101,18 +107,26 @@ local function RefreshPage()
         return
     end
     UpdateSubTabs()
-    local bank = SUBTABS[selected] == "bank"
-    page.Bank:SetShown(bank)
-    page.Hint:SetShown(bank)
-    page.Requests:SetShown(not bank)
+    local shown = SUBTABS[selected]
+    page.Bank:SetShown(shown == "bank")
+    page.Hint:SetShown(shown == "bank")
+    page.Send:SetShown(shown == "bank")
+    page.Requests:SetShown(shown == "requests")
+    page.Log:SetShown(shown == "log")
     for _, check in ipairs({ page.OnlyOpen, page.OnlyMine }) do
-        check:SetShown(not bank)
-        check.Label:SetShown(not bank)
+        check:SetShown(shown == "requests")
+        check.Label:SetShown(shown == "requests")
     end
-    if bank then
+    for _, check in ipairs(page.LogFilters) do
+        check:SetShown(shown == "log")
+        check.Label:SetShown(shown == "log")
+    end
+    if shown == "bank" then
         ns.BankView.Refresh(page.Bank)
-    else
+    elseif shown == "requests" then
         ns.RequestList.Show(page.Requests, onlyOpen, onlyMine)
+    else
+        ns.LogView.Show(page.Log, logFilters)
     end
 end
 GuildTab.Refresh = RefreshPage
@@ -285,14 +299,18 @@ local function CreatePage()
 
     page.Bank = ns.BankView.Create(page.Content)
     page.Requests = ns.RequestList.Create(page.Content)
+    page.Log = ns.LogView.Create(page.Content)
     ns.RequestList.onChange = RefreshPage
     CreateSubTabs()
 
     -- Under the inset, where Guild Info has its buttons: a hint, with what
-    -- the mail costs, or the request list's filters.
+    -- the mail costs, and the button to mail the bank character; or the
+    -- request list's or the log's filters.
+    page.Send = ns.MailToBank.CreateButton(page)
+    page.Send:SetPoint("RIGHT", page.Content, "BOTTOMRIGHT", 0, -15)
     page.Hint = page:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     page.Hint:SetPoint("LEFT", page.Content, "BOTTOMLEFT", 4, -15)
-    page.Hint:SetPoint("RIGHT", page.Content, "BOTTOMRIGHT", -4, -15)
+    page.Hint:SetPoint("RIGHT", page.Send, "LEFT", -8, 0)
     page.Hint:SetJustifyH("LEFT")
     page.Hint:SetText(L["Right-click an item to request it."] .. "\n"
         .. L["By mail: %s per stack, cash on delivery. In person: free."]
@@ -305,6 +323,21 @@ local function CreatePage()
         onlyMine = checked
     end)
     page.OnlyMine:SetPoint("LEFT", page.OnlyOpen.Label, "RIGHT", 16, 0)
+    -- The log's: items and money, the bank characters' and the vault's.
+    page.LogFilters = {}
+    for index, filter in ipairs({
+        { "items", L["Items"] }, { "money", L["Money"] }, { "banks", L["Bank characters"] }, { "vault", L["Guild vault"] },
+    }) do
+        local check = FilterCheck(filter[2], logFilters[filter[1]], function(checked)
+            logFilters[filter[1]] = checked
+        end)
+        if index == 1 then
+            check:SetPoint("LEFT", page.Content, "BOTTOMLEFT", 0, -15)
+        else
+            check:SetPoint("LEFT", page.LogFilters[index - 1].Label, "RIGHT", 16, 0)
+        end
+        page.LogFilters[index] = check
+    end
     page:Hide()
 end
 
@@ -371,6 +404,13 @@ local function Setup()
             UpdateBadge()
             RefreshPage()
         end)
+    end)
+    -- The bank characters' Prepare and Mail buttons follow the bags, the
+    -- bank, the mailbox and the mail being written (Prepare.lua).
+    ns.On("PrepareChanged", function()
+        if page:IsShown() and SUBTABS[selected] == "requests" then
+            ns.RequestList.Show(page.Requests, onlyOpen, onlyMine)
+        end
     end)
     ns.On("RosterUpdated", function()
         ns.Debounce("GuildTabRefresh", 0.3, function()

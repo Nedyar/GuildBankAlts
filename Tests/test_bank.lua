@@ -445,6 +445,7 @@ H.eq(view.GuildMoney:GetText(), "In the bank: -", "the guild bank's money, not s
 H.eq(view.Money:GetText(), "On the character: " .. Coins(0, 5, 0), "the character's money")
 H.check(view.Footer:IsShown(), "both in the gold frame under the slots")
 local tooltipLines = {}
+local addLine = rawget(env.GameTooltip, "AddLine")
 rawset(env.GameTooltip, "AddLine", function(_, text)
     tooltipLines[#tooltipLines + 1] = text
 end)
@@ -467,7 +468,7 @@ world:CloseGuildBank(mike)
 world:RunFor(150)
 ns.GuildTab.Refresh()
 H.eq(view.GuildMoney:GetText(), "In the bank: " .. Coins(9, 99, 99), "money that comes late is read too")
-rawset(env.GameTooltip, "AddLine", nil)
+rawset(env.GameTooltip, "AddLine", addLine)
 -- How columns fit a room: the largest scale, never above 1, every column shown.
 local Fit = alice.ns.BankView.Fit
 local across, rows, scale = Fit(2, 1000, 1000)
@@ -588,6 +589,67 @@ page.OnlyOpen._scripts.OnClick(page.OnlyOpen)
 H.check(Find(page.Requests.ScrollBox._provider.elements, function(e) return ns.Requests.IsClosed(e.view.state) end) == nil,
     "Only open requests hides the closed ones")
 Errors(world, "requests subtab")
+
+H.section("The Send items button")
+-- The game's mailbox: closed, with its Send tab and recipient box.
+env.MailFrame = H.NewObject(alice, "Frame")
+env.MailFrame:Hide()
+env.MailFrameTab_OnClick = function(_, tab)
+    alice.mailTab = tab
+end
+env.SendMailNameEditBox = H.NewObject(alice, "EditBox")
+local function OpenMailbox()
+    env.MailFrame:Show()
+    alice.mailTab = 1
+    world:FireEvent(alice, "PLAYER_INTERACTION_MANAGER_FRAME_SHOW", 17)
+    world:RunFor(1)
+end
+local function CloseMailbox()
+    env.MailFrame:Hide()
+    env.SendMailNameEditBox:SetText("")
+    alice.mailTab = nil
+end
+page.SubTabs.Tabs[1]._scripts.OnClick(page.SubTabs.Tabs[1])
+local send = page.Send
+H.check(send:IsShown() and send:IsEnabled() and send:GetText() == "Send items", "the Bank subtab has a Send items button")
+send._scripts.OnEnter(send)
+local tip = env.GameTooltip._lines
+H.check(tip[2]:find("A mail to Bank Holder", 1, true) and tip[3]:find("open a mailbox", 1, true),
+    "its tooltip: a mail to the bank character shown, once a mailbox is open")
+-- No mailbox open: it waits for one.
+local printed = #alice.printed
+send._scripts.OnClick(send)
+H.check(Printed(alice, "open a mailbox: a mail to Bank Holder will be ready.", printed), "without a mailbox, it says to open one")
+H.eq(alice.mailTab, nil, "and opens nothing itself")
+send._scripts.OnEnter(send)
+tip = env.GameTooltip._lines
+H.eq(tip[3], "Waiting for you to open a mailbox.", "it waits for one")
+OpenMailbox()
+H.eq(alice.mailTab, 2, "a mailbox opened: its Send tab")
+H.eq(env.SendMailNameEditBox:GetText(), "Bank Holder", "with the bank character as the recipient")
+-- A mailbox open: at once.
+alice.mailTab = 1
+env.SendMailNameEditBox:SetText("")
+send._scripts.OnClick(send)
+H.check(alice.mailTab == 2 and env.SendMailNameEditBox:GetText() == "Bank Holder", "with a mailbox open, at once")
+CloseMailbox()
+OpenMailbox()
+H.eq(env.SendMailNameEditBox:GetText(), "", "a mailbox opened later, without a click, is left as the game opens it")
+CloseMailbox()
+-- Waiting does not last.
+send._scripts.OnClick(send)
+world:RunFor(400)
+OpenMailbox()
+H.eq(env.SendMailNameEditBox:GetText(), "", "a mailbox opened long after the click is left alone")
+CloseMailbox()
+-- Not on the other subtabs, and not to oneself.
+page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
+H.check(not send:IsShown(), "the other subtabs have no Send items button")
+bankPage.SubTabs.Tabs[1]._scripts.OnClick(bankPage.SubTabs.Tabs[1])
+H.check(bankPage.Send:IsShown() and not bankPage.Send:IsEnabled(), "a bank character cannot mail its own bank")
+bankPage.Send._scripts.OnEnter(bankPage.Send)
+H.eq(bankEnv.GameTooltip._lines[2], "This is your own bank.", "and is told why")
+Errors(world, "send items")
 
 H.section("Version")
 H.eq(alice.ns.PREFIX, alice.ns.TRIAL and "GuildBankAltsDev" or "GuildBankAlts", "the prefix")

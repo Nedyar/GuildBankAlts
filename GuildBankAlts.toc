@@ -12,7 +12,7 @@
 ## Notes-zhCN: 将公会角色用作公会银行：每位安装本插件的成员都能在公会窗口中查看他们持有的物品并向其申请物品。
 ## Notes-zhTW: 將公會角色作為公會銀行：每位安裝本插件的成員都能在公會視窗中查看他們持有的物品並向其申請物品。
 ## Author: Nedyar
-## Version: 0.2.0
+## Version: 0.3.0
 ## Dependencies: LibGuildSync
 ## SavedVariables: GuildBankAltsDB
 ## IconTexture: Interface\Icons\INV_Misc_Bag_10
@@ -34,8 +34,13 @@ Data.lua
 Ranks.lua
 Bank.lua
 Requests.lua
+Log.lua
 Deliveries.lua
 BankView.lua
 RequestForm.lua
+MailToBank.lua
+Prepare.lua
+BagLocks.lua
 RequestList.lua
+LogView.lua
 GuildTab.lua

@@ -1,7 +1,10 @@
 -- RequestList.lua: the Requests subtab of the Guild Bank tab (GuildTab.lua):
--- every withdrawal request of the guild, newest first, with where it stands
+-- every withdrawal request of the guild, oldest first, with where it stands
 -- and the buttons that apply to us: Delete (our own, until approved) and
 -- Reject (a bank character, an officer or the guild master, while open).
+-- A bank character's open requests also have Prepare, and Mail for those by
+-- mail (Prepare.lua): beside the other button, enabled when they can do
+-- their part, with a tooltip saying what they do or why they cannot.
 -- Also the chat notices about requests that concern us.
 local _, ns = ...
 local L = ns.L
@@ -10,7 +13,7 @@ local RequestList = {}
 ns.RequestList = RequestList
 
 local ROW_HEIGHT = 56
-local BUTTON_WIDTH, BUTTON_HEIGHT = 84, 22
+local BUTTON_WIDTH, BUTTON_HEIGHT, BUTTON_GAP = 84, 22, 4
 local NOTE_PREVIEW = 60  -- bytes of the note shown in a row; all of it in the tooltip
 
 local function Name(guid)
@@ -139,6 +142,16 @@ local function ButtonOnEnter(button)
     end
 end
 
+local function CreateButton(row, onClick)
+    local button = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    button:SetSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+    button:SetMotionScriptsWhileDisabled(true)
+    button:SetScript("OnClick", onClick)
+    button:SetScript("OnEnter", ButtonOnEnter)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    return button
+end
+
 local function CreateRow(row)
     row.Icon = row:CreateTexture(nil, "ARTWORK")
     row.Icon:SetSize(36, 36)
@@ -180,22 +193,60 @@ local function CreateRow(row)
     highlight:SetAtlas("PetList-ButtonHighlight")
     highlight:SetAllPoints()
     highlight:SetBlendMode("ADD")
-    row.Button = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    row.Button:SetSize(BUTTON_WIDTH, BUTTON_HEIGHT)
-    row.Button:SetPoint("RIGHT", -8, 0)
-    row.Button:SetMotionScriptsWhileDisabled(true)
-    row.Button:SetScript("OnClick", function(self)
+    row.Button = CreateButton(row, function(self)
         Run(self.action, row.view)
     end)
-    row.Button:SetScript("OnEnter", ButtonOnEnter)
-    row.Button:SetScript("OnLeave", GameTooltip_Hide)
-    -- The texts stop before the button.
-    for _, text in ipairs({ row.Title, row.State, row.Detail }) do
-        text:SetPoint("RIGHT", row.Button, "LEFT", -8, 0)
-    end
+    row.Prepare = CreateButton(row, function(self)
+        ns.Prepare.Run(row.view, self.action)
+    end)
+    row.Mail = CreateButton(row, function()
+        ns.Prepare.Run(row.view, "mail")
+    end)
     row:EnableMouse(true)
     row:SetScript("OnEnter", RowOnEnter)
     row:SetScript("OnLeave", GameTooltip_Hide)
+end
+
+-- A Prepare (or Release) or Mail button: { action, text, enabled, tip }
+-- (Prepare.Actions).
+local function SetUp(button, action)
+    button.action = action.action
+    button:SetText(action.text)
+    button:SetEnabled(action.enabled == true)
+    button.reason = action.tip
+    button:Show()
+end
+
+-- Where the button in place index (1: the rightmost) goes, from the row's
+-- right edge.
+local function Place(index)
+    return -(8 + (index - 1) * (BUTTON_WIDTH + BUTTON_GAP))
+end
+
+-- The buttons at the right of the row, side by side, each in a place of
+-- its own so they line up from row to row: from the right, the other
+-- button (Delete or Reject), Mail (left empty for a request in person) and
+-- Prepare. The texts stop before the leftmost place in use.
+local function LayOut(row, other, ready)
+    row.Prepare:Hide()
+    row.Mail:Hide()
+    row.Button:ClearAllPoints()
+    row.Button:SetPoint("RIGHT", row, "RIGHT", Place(1), 0)
+    local used = other and 1 or 0
+    if ready then
+        row.Prepare:ClearAllPoints()
+        row.Prepare:SetPoint("RIGHT", row, "RIGHT", Place(3), 0)
+        SetUp(row.Prepare, ready[1])
+        if ready[2] then
+            row.Mail:ClearAllPoints()
+            row.Mail:SetPoint("RIGHT", row, "RIGHT", Place(2), 0)
+            SetUp(row.Mail, ready[2])
+        end
+        used = 3
+    end
+    for _, text in ipairs({ row.Title, row.State, row.Detail }) do
+        text:SetPoint("RIGHT", row, "RIGHT", used > 0 and Place(used) - BUTTON_WIDTH - 8 or -8, 0)
+    end
 end
 
 local function InitRow(row, data)
@@ -218,6 +269,7 @@ local function InitRow(row, data)
         row.Button:SetEnabled(action[3])
     end
     row.Button:SetShown(action ~= nil)
+    LayOut(row, action, ns.Prepare.Actions(view))
 end
 
 -- The list --------------------------------------------------------------------------
@@ -243,8 +295,8 @@ function RequestList.Create(parent)
     return list
 end
 
--- The requests the list shows. onlyOpen: those not approved nor rejected;
--- onlyMine: ours.
+-- The requests the list shows, oldest first (in the order they are to be
+-- seen to). onlyOpen: those not approved nor rejected; onlyMine: ours.
 function RequestList.Views(onlyOpen, onlyMine)
     local list = {}
     for _, view in ipairs(ns.Requests.List(ns.Data.CurrentGuild(false))) do
@@ -252,6 +304,12 @@ function RequestList.Views(onlyOpen, onlyMine)
             list[#list + 1] = view
         end
     end
+    table.sort(list, function(a, b)
+        if a.request.c ~= b.request.c then
+            return a.request.c < b.request.c
+        end
+        return a.key < b.key
+    end)
     return list
 end
 

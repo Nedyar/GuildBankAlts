@@ -2,8 +2,8 @@ local H = ...
 
 -- Members on the last release and members on this version share one guild:
 -- both must keep talking, whoever holds the bank character. The release is
--- taken from its git tag (H.Release).
-local RELEASE = "v0.1.0"
+-- taken from its git tag (H.Release); it runs on this LibGuildSync.
+local RELEASE = "v0.2.0"
 
 H.section("Versions: against " .. RELEASE)
 local old = H.Release(RELEASE)
@@ -11,7 +11,7 @@ if not old then
     print("   NOTE: " .. RELEASE .. " could not be extracted with git: skipped")
     return
 end
-local OLD = { old }
+local OLD = { H.ADDONS[1], old }
 
 local function Errors(world, label)
     H.eq(#world.errors, 0, "no errors: " .. label)
@@ -110,3 +110,37 @@ world:RunFor(300)
 local bk = BankAt(member, bank)
 H.check(bk ~= nil and bk.b ~= nil, "a member on " .. RELEASE .. " gets an offline bank character's bags from another character")
 Errors(world, "relayed")
+
+-- The bank's log (0.3.0): members on the release neither keep nor pass it
+-- on, but the copy they pass on does not hide it from members on this
+-- version, who get it from its bank character.
+world = H.NewWorld({ seed = 43, senderFormat = "short", strictWhispers = true })
+bank = world:NewClient("Bank Holder", { rank = "Banco", rankIndex = 4, money = 5000 })
+local oldMember = world:NewClient("Old Member", { rank = "Miembro", rankIndex = 3, addons = OLD })
+local newMember = world:NewClient("New Member", { rank = "Miembro", rankIndex = 3 })
+world:Login(bank)
+world:Login(oldMember)
+world:RunFor(60)
+world:Trade(bank, oldMember, { [1] = { 2589, 5 } }, {}, { bMoney = 300 })
+world:RunFor(120)
+local bankLog = bank.ns.Data.GetOwnRecord(false).lg
+H.check(bankLog ~= nil and #bankLog == 2, "a bank character on this version logs a trade with a member on " .. RELEASE)
+H.check(oldMember.ns.Data.GetGuild("Test Guild").members[bank.guid] ~= nil, "who still gets its record")
+world:Logout(bank)
+world:RunFor(10)
+world:Login(newMember)
+world:RunFor(300)
+local relayed = newMember.ns.Data.GetGuild("Test Guild").members[bank.guid]
+H.check(relayed ~= nil and relayed.bk ~= nil and relayed.lg == nil, "passed on by a member on " .. RELEASE .. ": the bags, without the log")
+world:Login(bank)
+world:RunFor(300)
+relayed = newMember.ns.Data.GetGuild("Test Guild").members[bank.guid]
+H.check(relayed ~= nil and relayed.lg ~= nil and #relayed.lg == 2, "the log comes once the bank character is online")
+-- Before its release (ANNOUNCE_AS in Core.lua), this version tells the
+-- guild it is the last release: members on it are not told to update.
+local told = false
+for _, line in ipairs(oldMember.printed) do
+    told = told or line:find("a newer version of Guild Bank Alts", 1, true) ~= nil
+end
+H.eq(told, bank.ns.VERSION_NUM > oldMember.ns.VERSION_NUM, "members on " .. RELEASE .. " are told to update only once this version is out")
+Errors(world, "log across versions")
