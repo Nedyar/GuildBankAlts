@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1 - Rejected requests told
+
+- **A rejected request is told to whoever made it** as a bank character is told of the requests waiting for it: the Requests subtab counts it ("Requests (1)") and the guild window's tab shows the notification mark, until its maker sees it listed in the Requests subtab (with "Only open requests" off, which hides it). The chat line it already got stays.
+- **Money one bank character gives another shows once in the log**, by trade or mail: as the giver's line, whose tooltip has both bank characters' money before and after (for a mail taken later, when it was sent and when it was taken), as a bank character's money at the guild vault already did. The postage stays a line of its own: money that left the bank. Money mailed and not taken yet shows alone until it is.
+- **Fixed: entries of the same time out of order in the log**: a mail's postage showed below its money, as if paid before it. Newest first now holds for them too.
+- **A log line too long for its row** is repeated in its tooltip only when the row cuts more than how long ago it was (which the tooltip's date already tells), and without it.
+- **Fixed: the postage of a mail carrying money** was logged with that money added (a mail with 1 copper logged 31 copper of postage instead of 30), so the money left after it came out short. The game's price of a mail counts the money it carries; the postage is the rest.
+
 ## 0.3.0 - The bank's log
 
 - **A Log subtab** in the Guild Bank tab: what came into the bank and what went out of it, newest first, worded like the game's own guild bank log ("Name deposited [Item] x 5 ( 3 hours ago )").

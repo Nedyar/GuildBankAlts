@@ -208,11 +208,17 @@ end
 -- Mail sent: what is attached when it goes, counted once the game says it
 -- went. Attachments are also read as they change, in case the game has
 -- emptied them by then.
-local attached, attachedPrice, outgoing = {}, 0, nil
+local attached, attachedPostage, outgoing = {}, 0, nil
 
--- What sending the mail costs (the postage, per item attached).
-local function Price()
-    return Copper(GetSendMailPrice and GetSendMailPrice())
+local function SentMoney()
+    return Copper(GetSendMailMoney and GetSendMailMoney())
+end
+
+-- The postage of the mail (per item attached). The game's price of a mail
+-- counts the money it carries too (a mail with 1 copper costs 31): that is
+-- not postage.
+local function Postage()
+    return math.max(Copper(GetSendMailPrice and GetSendMailPrice()) - SentMoney(), 0)
 end
 
 local function Attached()
@@ -225,14 +231,13 @@ local function Attached()
 end
 
 local function OnSendMail(recipient)
-    local items, price = Attached(), Price()
+    local items, postage = Attached(), Postage()
     if next(items) == nil then
-        items, price = attached, math.max(price, attachedPrice)
+        items, postage = attached, math.max(postage, attachedPostage)
     end
     -- Our money is read before the game takes what the mail carries.
     outgoing = {
-        to = ns.Plain(recipient), items = items, money = Copper(GetSendMailMoney and GetSendMailMoney()),
-        postage = price, before = ns.Number(GetMoney()),
+        to = ns.Plain(recipient), items = items, money = SentMoney(), postage = postage, before = ns.Number(GetMoney()),
     }
 end
 
@@ -336,10 +341,10 @@ local function OnEvent(_, event, ...)
     elseif event == "UI_INFO_MESSAGE" then
         TradeComplete(MessageOf(...))
     elseif event == "MAIL_SEND_INFO_UPDATE" then
-        attached, attachedPrice = Attached(), Price()
+        attached, attachedPostage = Attached(), Postage()
     elseif event == "MAIL_SEND_SUCCESS" then
         local sent = outgoing
-        outgoing, attached, attachedPrice = nil, {}, 0
+        outgoing, attached, attachedPostage = nil, {}, 0
         if sent then
             local partner = ByName(sent.to)
             Exchanged("mail to " .. tostring(sent.to), ns.Log.MAIL, partner, sent.to, sent.items, nil, sent.money, nil,

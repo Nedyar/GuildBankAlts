@@ -89,7 +89,7 @@ end
 -- Subtabs ---------------------------------------------------------------------------
 
 local function UpdateSubTabs()
-    local waiting = ns.RequestList.WaitingForMe()
+    local waiting = ns.RequestList.ForMe()
     local texts = {
         L["Bank"],
         waiting > 0 and ("%s (%d)"):format(L["Requests"], waiting) or L["Requests"],
@@ -102,12 +102,19 @@ local function UpdateSubTabs()
     PanelTemplates_SetTab(page.SubTabs, selected)
 end
 
+local UpdateBadge
+
 local function RefreshPage()
     if not page or not page:IsShown() then
         return
     end
-    UpdateSubTabs()
     local shown = SUBTABS[selected]
+    -- Our rejected requests, listed (unless only open ones are): seen.
+    if shown == "requests" and not onlyOpen then
+        ns.RequestList.MarkSeen()
+    end
+    UpdateSubTabs()
+    UpdateBadge()
     page.Bank:SetShown(shown == "bank")
     page.Hint:SetShown(shown == "bank")
     page.Send:SetShown(shown == "bank")
@@ -344,10 +351,11 @@ end
 -- The tab ---------------------------------------------------------------------------
 
 -- Blizzard's notification mark, as its Roster tab shows for applicants:
--- while requests wait for us, as a bank character.
-local function UpdateBadge()
+-- while requests wait for us, as a bank character, or ours were rejected
+-- since we last saw them (RequestList.ForMe).
+function UpdateBadge()
     if tab then
-        tab.Badge:SetShown(ns.RequestList.WaitingForMe() > 0)
+        tab.Badge:SetShown(ns.RequestList.ForMe() > 0)
     end
 end
 

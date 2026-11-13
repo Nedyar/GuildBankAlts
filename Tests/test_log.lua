@@ -325,6 +325,17 @@ H.check(tip[1]:find("Bank Holder", 1, true) ~= nil, "a money line's tooltip tell
 H.eq(tip[2], "Balance before | " .. Money(100000), "the bank character's money before")
 H.eq(tip[3], "Balance after | " .. Money(101500), "and after")
 H.check(#tip == 4 and not tip[1]:find("deposited", 1, true), "not the line again")
+-- A line the row cuts short: in the tooltip whole, without how long ago,
+-- unless that is all the row cuts.
+moneyRow.Text.IsTruncated = function() return true end
+moneyRow.Text._width = #alice.ns.LogView.LineText(moneyLine.line, true) * 6
+moneyRow._scripts.OnEnter(moneyRow)
+H.eq(#env.GameTooltip._lines, 4, "a line cut only in how long ago: not again, the tooltip tells when")
+moneyRow.Text._width = 60
+moneyRow._scripts.OnEnter(moneyRow)
+tip = env.GameTooltip._lines
+H.check(#tip == 5 and tip[2]:find("(by trade)", 1, true) and not tip[2]:find("ago", 1, true),
+    "cut more: the whole line, without how long ago: " .. tostring(tip[2]))
 local postageLine = Find(elements, function(e) return e.line.entry.v == Log.POSTAGE end)
 text = TextOf(postageLine)
 H.check(text:find("Bank Holder|r |cffff2020withdrew|r", 1, true) and text:find("(postage of a mail to ", 1, true),
@@ -429,6 +440,107 @@ H.check(tip[1]:find("Bank Holder", 1, true) and tip[2] == "Balance before | " ..
     and tip[4]:find("Guild vault", 1, true) and tip[6] == "Balance after | " .. Money(17000), "its tooltip, both again")
 Filter(4, true)
 Errors(world, "bank character at the vault")
+
+H.section("Log: money between bank characters")
+-- One mails the other money, taken two days later; then they trade money
+-- both ways.
+world:Mail(bank, "Second Bank", {}, { money = 3000 })
+world.base = world.base + 2 * 86400
+world:TakeMail(second, #second.inbox, "money")
+world:Trade(bank, second, {}, {}, { aMoney = 701, bMoney = 301 })
+world:RunFor(2)
+-- The same money from a bank character to a member, and from that member
+-- to the other bank character: not between them.
+world:Mail(bank, "Alice Smith", {}, { money = 999 })
+world:Mail(alice, "Second Bank", {}, { money = 999 })
+world:TakeMail(second, #second.inbox, "money")
+-- Sent, not taken yet.
+world:Mail(bank, "Second Bank", {}, { money = 444 })
+world:RunFor(150)
+elements = page.Log.ScrollBox._provider.elements
+local function Listed(m)
+    return Count(elements, function(e) return e.line.source == "bank" and e.line.entry.m == m end)
+end
+local function Line(m)
+    return Find(elements, function(e) return e.line.source == "bank" and e.line.entry.m == m end)
+end
+H.eq(Listed(3000), 1, "money one bank character mailed another: one line")
+local mailed = Line(3000)
+H.check(mailed.line.bank == bank.guid and mailed.line.entry.a == Log.OUT and mailed.line.entry.v == Log.MAIL
+    and mailed.line.pair and mailed.line.pair.bank == second.guid and mailed.line.pair.entry.a == Log.IN,
+    "the giver's, with the taker's")
+text, row = TextOf(mailed)
+H.check(text:find("[Bank Holder]", 1, true) and text:find("Second Bank|r |cffff2020withdrew|r", 1, true)
+    and text:find("(by mail)", 1, true), "worded as the giver's: " .. text)
+row._scripts.OnEnter(row)
+tip = env.GameTooltip._lines
+local given, taken = mailed.line.entry, mailed.line.pair.entry
+H.check(tip[1]:find("Bank Holder", 1, true) and tip[2] == "Balance before | " .. Money(given.r + 3000)
+    and tip[3] == "Balance after | " .. Money(given.r), "its tooltip: the giver's money before and after")
+H.check(tip[4]:find("^%d%d/") ~= nil, "when it was sent: " .. tostring(tip[4]))
+H.check(tip[5]:find("Second Bank", 1, true) and tip[6] == "Balance before | " .. Money(taken.r - 3000)
+    and tip[7] == "Balance after | " .. Money(taken.r), "the taker's")
+H.check(#tip == 8 and tip[8]:find("^%d%d/") ~= nil and tip[8] ~= tip[4], "and when it was taken: " .. tostring(tip[8]))
+local function IndexOf(fn)
+    for index, e in ipairs(elements) do
+        if fn(e) then
+            return index
+        end
+    end
+end
+local postageAt = IndexOf(function(e)
+    return e.line.entry.v == Log.POSTAGE and e.line.entry.t == given.t and e.line.entry.m == 30 and e.line.entry.w == "Second Bank"
+end)
+H.check(postageAt ~= nil, "its postage stays a line of its own: money that left the bank")
+H.check(postageAt and postageAt < IndexOf(function(e) return e == mailed end),
+    "above the money, newest first: paid after it, at the same time")
+H.check(Listed(701) == 1 and Line(701).line.bank == bank.guid and Line(701).line.entry.a == Log.OUT and Line(701).line.pair,
+    "a trade, each way: what one gave")
+H.check(Listed(301) == 1 and Line(301).line.bank == second.guid and Line(301).line.entry.a == Log.OUT and Line(301).line.pair,
+    "and what the other gave")
+text, row = TextOf(Line(701))
+H.check(text:find("(by trade)", 1, true) ~= nil, "by trade: " .. text)
+row._scripts.OnEnter(row)
+tip = env.GameTooltip._lines
+H.check(#tip == 7 and tip[4]:find("Second Bank", 1, true) and tip[7]:find("^%d%d/") ~= nil, "at once: when, only once")
+H.check(Listed(999) == 2 and not Line(999).line.pair and not FindLast(elements, function(e) return e.line.entry.m == 999 end).line.pair,
+    "money to and from a member: each line apart")
+H.check(Listed(444) == 1 and Line(444).line.bank == bank.guid and not Line(444).line.pair, "money sent, not taken yet: the giver's line alone")
+world:TakeMail(second, #second.inbox, "money")
+world:RunFor(150)
+elements = page.Log.ScrollBox._provider.elements
+H.check(Listed(444) == 1 and Line(444).line.bank == bank.guid and Line(444).line.pair, "once taken, with the taker's")
+elements = Filter(3, false)
+H.eq(Find(elements, function(e) return e.line.source == "bank" end), nil, "without the bank characters: neither")
+Filter(3, true)
+-- Entries alike that are not the same money.
+local At = world:ServerTime()
+local function Pairs(bankLog, secondLog)
+    local guild = H.DeepCopy(alice.ns.Data.CurrentGuild(false))
+    guild.members[bank.guid].lg = bankLog
+    guild.members[second.guid].lg = secondLog
+    return Count(alice.ns.Log.Lines(guild), function(line)
+        return line.source == "bank" and line.entry.a == Log.OUT and line.pair ~= nil
+    end)
+end
+local function E(t, a, v, w, m)
+    return { t = At + t, a = a, v = v, w = w, m = m }
+end
+H.eq(Pairs({ E(0, Log.OUT, Log.MAIL, "Second Bank", 50) }, { E(10 * 86400, Log.IN, Log.MAIL, "Bank Holder", 50) }), 1,
+    "a mail taken days after it was sent")
+H.eq(Pairs({ E(0, Log.OUT, Log.MAIL, "Second Bank", 50) }, { E(-HOUR, Log.IN, Log.MAIL, "Bank Holder", 50) }), 0,
+    "not money taken before it was sent")
+H.eq(Pairs({ E(0, Log.OUT, Log.MAIL, "Second Bank", 50) }, { E(40 * 86400, Log.IN, Log.MAIL, "Bank Holder", 50) }), 0,
+    "nor after the game would have sent it back")
+H.eq(Pairs({ E(0, Log.OUT, Log.TRADE, "Second Bank", 50) }, { E(HOUR, Log.IN, Log.TRADE, "Bank Holder", 50) }), 0,
+    "a trade is written down by both at once")
+H.eq(Pairs({ E(0, Log.OUT, Log.MAIL, "Second Bank", 50) }, { E(10, Log.IN, Log.TRADE, "Bank Holder", 50) }), 0,
+    "given one way, taken another: not the same")
+H.eq(Pairs({ E(0, Log.OUT, Log.MAIL, "Second Bank", 50) }, { E(10, Log.IN, Log.MAIL, "Bank Holder", 51) }), 0,
+    "nor other money")
+H.eq(Pairs({ E(0, Log.OUT, Log.MAIL, "Second Bank", 50), E(60, Log.OUT, Log.MAIL, "Second Bank", 50) },
+    { E(90, Log.IN, Log.MAIL, "Bank Holder", 50) }), 1, "two mails alike, one taken: one pair")
+Errors(world, "between bank characters")
 
 H.section("Log: nobody changes it")
 -- Not even a bank character its own entries: the log is only added to.

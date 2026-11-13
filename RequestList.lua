@@ -330,6 +330,56 @@ function RequestList.WaitingForMe()
     return ns.Requests.WaitingFor(ns.Data.CurrentGuild(false), ns.playerGUID)
 end
 
+-- Our requests rejected, and when.
+local function OurRejected()
+    local list = {}
+    if ns.playerGUID then
+        for _, view in ipairs(ns.Requests.List(ns.Data.CurrentGuild(false))) do
+            if view.requester == ns.playerGUID and view.state == "rejected" then
+                list[#list + 1] = view
+            end
+        end
+    end
+    return list
+end
+
+-- How many of our requests were rejected since we last saw the list with
+-- them (OwnState().requestsSeen, a time).
+function RequestList.RejectedForMe()
+    local seen = ns.playerGUID and ns.db and ns.Data.OwnState().requestsSeen
+    if not seen then
+        return 0
+    end
+    local count = 0
+    for _, view in ipairs(OurRejected()) do
+        if (view.closedAt or 0) > seen then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+-- What the Requests subtab counts and the guild tab's mark shows: the
+-- requests waiting for us, as a bank character, and ours rejected since
+-- we last saw them.
+function RequestList.ForMe()
+    return RequestList.WaitingForMe() + RequestList.RejectedForMe()
+end
+
+-- The list shown with our rejected requests in it: they are seen. Up to
+-- the latest rejection too, should its maker's clock be ahead of ours.
+function RequestList.MarkSeen()
+    if not ns.playerGUID or not ns.db then
+        return
+    end
+    local own = ns.Data.OwnState()
+    local seen = math.max(ns.Now(), own.requestsSeen or 0)
+    for _, view in ipairs(OurRejected()) do
+        seen = math.max(seen, view.closedAt or 0)
+    end
+    own.requestsSeen = seen
+end
+
 -- Notices ---------------------------------------------------------------------------
 
 -- What a change of state means for us, as a chat line only we see. Our own
@@ -380,6 +430,9 @@ function RequestList.CheckNotices()
 end
 
 function RequestList.Init()
+    -- The very first time, rejections made before are not told.
+    local own = ns.Data.OwnState()
+    own.requestsSeen = own.requestsSeen or ns.Now()
     ns.On("DataChanged", function()
         ns.Debounce("RequestNotices", 1, RequestList.CheckNotices)
     end)

@@ -4,7 +4,9 @@
 -- bank's records (see Pack.lua for the fields).
 --
 -- GuildBankAltsDB.own[GUID] keeps, for each character of the account:
--- sentFP, sentGuild (the sync's), lastRequest and requestStates.
+-- sentFP, sentGuild (the sync's), lastRequest, requestStates, requestsSeen
+-- (when we last saw our rejected requests, RequestList.lua) and prepared
+-- (the stacks kept for requests, Prepare.lua).
 local _, ns = ...
 local Lib = ns.Lib
 local Pack, Data = ns.Pack, ns.Data

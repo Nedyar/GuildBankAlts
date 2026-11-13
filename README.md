@@ -106,7 +106,11 @@ window, and asks them for items.
   guild vault, had before and after it (the vault's is worked out from
   what it holds when its log is read). A bank character's money put into
   the vault or taken from it shows once, as the vault's line, with both:
-  the vault's money and the bank character's. At an item line, the item.
+  the vault's money and the bank character's. So does money one bank
+  character gives another, by trade or mail: once, as the giver's line,
+  with both bank characters' money (and, for a mail taken later, when it
+  was sent and when it was taken); its postage stays a line of its own, as
+  money that left the bank. At an item line, the item.
   Both tell the date and time it happened (the vault's only roughly, to
   the hour, unless a bank character told it). Nobody can change or delete
   an entry, not even the bank character that wrote it: the log is only
@@ -114,8 +118,11 @@ window, and asks them for items.
   bank characters' entries and the guild vault's.
 - **Notices.** A bank character is told in the chat of new requests and how
   to deliver them, and its tab shows the notification mark while requests
-  wait for it. A member is told when their request is delivered, in part or
-  in full, or rejected.
+  wait for it. A member is told in the chat when their request is
+  delivered, in part or in full, or rejected. A rejected request is also
+  counted on the Requests subtab ("Requests (1)") and shows the
+  notification mark on the tab until its maker sees it listed there (with
+  "Only open requests" off, as that hides it).
 - **Sharing in the background.** Everything goes to the rest of the guild
   through hidden addon messages, which never appear in any chat window.
   When you log in, a guild member who is online sends you whatever you are

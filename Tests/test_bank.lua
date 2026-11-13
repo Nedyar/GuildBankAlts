@@ -590,6 +590,40 @@ H.check(Find(page.Requests.ScrollBox._provider.elements, function(e) return ns.R
     "Only open requests hides the closed ones")
 Errors(world, "requests subtab")
 
+H.section("A rejected request's notice")
+-- The requester looks at the Bank subtab while an officer rejects a
+-- request of hers.
+local function RequestsLabel()
+    return page.SubTabs.Tabs[2]:GetText()
+end
+world:RunFor(150)
+page.SubTabs.Tabs[1]._scripts.OnClick(page.SubTabs.Tabs[1])
+H.check(RequestsLabel() == "Requests" and not tab.Badge:IsShown(), "nothing to tell the requester yet")
+local turnedDown = ns.Requests.Create(bank.guid, "item:2589", 3, "", ns.Requests.IN_PERSON)
+world:RunFor(150)
+local printed = #alice.printed
+H.check(olga.ns.Requests.Reject(alice.guid, turnedDown), "an officer rejects it")
+world:RunFor(150)
+H.eq(RequestsLabel(), "Requests (1)", "the requester's Requests subtab counts it")
+H.check(tab.Badge:IsShown(), "and the guild tab shows the notification mark")
+H.check(Printed(alice, "rejected your request", printed), "besides the chat line")
+-- Seen only with the rejected requests listed: not while only open ones are.
+H.check(page.OnlyOpen:GetChecked(), "(only open requests listed)")
+page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
+H.check(RequestsLabel() == "Requests (1)" and tab.Badge:IsShown(), "with only open requests listed, it is still to be seen")
+page.OnlyOpen:SetChecked(false)
+page.OnlyOpen._scripts.OnClick(page.OnlyOpen)
+H.check(RequestsLabel() == "Requests" and not tab.Badge:IsShown(), "listed, it is seen: the count and the mark go away")
+world:RunFor(150)
+H.check(RequestsLabel() == "Requests" and not tab.Badge:IsShown(), "and stay away")
+-- Rejected while the requester looks at the list: seen at once.
+local seenAtOnce = ns.Requests.Create(bank.guid, "item:2589", 2, "", ns.Requests.IN_PERSON)
+world:RunFor(150)
+olga.ns.Requests.Reject(alice.guid, seenAtOnce)
+world:RunFor(150)
+H.check(RequestsLabel() == "Requests" and not tab.Badge:IsShown(), "rejected while the list shows, there is nothing more to tell")
+Errors(world, "rejected notice")
+
 H.section("The Send items button")
 -- The game's mailbox: closed, with its Send tab and recipient box.
 env.MailFrame = H.NewObject(alice, "Frame")

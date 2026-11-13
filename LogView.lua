@@ -188,8 +188,9 @@ local function Source(line)
     return L["Guild vault"], VAULT_COLOR
 end
 
--- A line of the log (see Log.Lines), as shown.
-function LogView.LineText(line)
+-- A line of the log (see Log.Lines), as shown; withoutTime: without how
+-- long ago.
+function LogView.LineText(line, withoutTime)
     local name, color = Source(line)
     local tag = Color(color, "[" .. name .. "]")
     local text, note
@@ -202,7 +203,9 @@ function LogView.LineText(line)
     if note then
         parts[#parts + 1] = Color(NOTE_COLOR, "(" .. note .. ")")
     end
-    parts[#parts + 1] = Text("GUILD_BANK_LOG_TIME", Ago(line.at or line.entry.t))
+    if not withoutTime then
+        parts[#parts + 1] = Text("GUILD_BANK_LOG_TIME", Ago(line.at or line.entry.t))
+    end
     return table.concat(parts, " ")
 end
 
@@ -252,8 +255,22 @@ end
 
 -- An item's line: the item's tooltip. A money line: where it belongs, and
 -- the money before and after; for a bank character's money put into the
--- guild vault or taken from it, both the vault's and the bank character's.
--- Then when it happened, and the whole line if the row cuts it short.
+-- guild vault or taken from it, both the vault's and the bank character's;
+-- for money one bank character gave another, both bank characters'. Then
+-- when it happened (for a mail taken later, when each did its part). If
+-- the row cuts the line short, the whole line, without how long ago: unless
+-- that is all it cuts, as when it happened tells it.
+local function WholeLine(row)
+    if not row.Text:IsTruncated() then
+        return nil
+    end
+    local text = LogView.LineText(row.line, true)
+    row.Measure:SetText(text)
+    if row.Measure:GetStringWidth() > row.Text:GetWidth() then
+        return text
+    end
+end
+
 local function RowOnEnter(row)
     local line = row.line
     if not line then
@@ -266,16 +283,22 @@ local function RowOnEnter(row)
         local name, color = Source(line)
         GameTooltip:SetText(Color(color, name))
     end
-    if row.Text:IsTruncated() then
-        GameTooltip:AddLine(row.Text:GetText(), 1, 1, 1, true)
+    local whole = WholeLine(row)
+    if whole then
+        GameTooltip:AddLine(whole, 1, 1, 1, true)
     end
+    local pair = line.pair
+    local apart = pair and pair.source == "bank" and line.source == "bank" and math.abs(pair.entry.t - line.entry.t) >= 60
     AddBalance(line)
-    if line.pair then
-        local name, color = Source(line.pair)
-        GameTooltip:AddLine(Color(color, name))
-        AddBalance(line.pair)
+    if apart then
+        GameTooltip:AddLine(LogView.When(line), 0.6, 0.6, 0.6)
     end
-    GameTooltip:AddLine(LogView.When(line), 0.6, 0.6, 0.6)
+    if pair then
+        local name, color = Source(pair)
+        GameTooltip:AddLine(Color(color, name))
+        AddBalance(pair)
+    end
+    GameTooltip:AddLine(LogView.When(apart and pair or line), 0.6, 0.6, 0.6)
     GameTooltip:Show()
 end
 
@@ -298,6 +321,9 @@ local function CreateRow(row)
     row.Text:SetPoint("RIGHT", -4, 0)
     row.Text:SetJustifyH("LEFT")
     row.Text:SetWordWrap(false)
+    -- Not anchored, so never drawn: it measures a line unbounded.
+    row.Measure = row:CreateFontString(nil, "ARTWORK")
+    row.Measure:SetFontObject(ChatFontNormal)
     local highlight = row:CreateTexture(nil, "HIGHLIGHT")
     highlight:SetAtlas("PetList-ButtonHighlight")
     highlight:SetAllPoints()
@@ -348,8 +374,11 @@ function LogView.Lines(filters)
         local kind = line.entry.i and filters.items or (not line.entry.i and filters.money)
         local source = line.source == "bank" and filters.banks or (line.source == "vault" and filters.vault)
         -- A bank character's money at the vault shows as the vault's line,
-        -- unless the vault's lines are hidden.
-        local shown = not (line.source == "bank" and line.pair and filters.vault)
+        -- unless the vault's lines are hidden; money one bank character gave
+        -- another, as the giver's line.
+        local pair = line.pair
+        local shown = not (line.source == "bank" and pair
+            and (pair.source == "vault" and filters.vault or pair.source == "bank" and line.entry.a == ns.Log.IN))
         if kind and source and shown then
             lines[#lines + 1] = line
         end

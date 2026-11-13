@@ -15,6 +15,8 @@
 -- A bank character that puts money into the vault or takes it out writes it
 -- down too (via Log.VAULT), with the money it had: the vault's line then
 -- tells both, and the bank character's is not listed apart (see Log.Lines).
+-- Money one bank character gives another, by trade or mail, is in both
+-- logs too: the giver's line tells both, the taker's is not listed apart.
 local _, ns = ...
 local Data, Pack = ns.Data, ns.Pack
 local LIMITS = Pack.LIMITS
@@ -33,6 +35,10 @@ local SAME_ENTRY, SAME_OLD_ENTRY, OLD = 2 * HOUR, 3 * DAY, 30 * DAY
 -- How far a bank character's own time of its money at the vault may be from
 -- the vault's: the vault's is off by half an hour at most.
 local PAIR_GAP = HOUR
+-- Money one bank character gives another: both write down a trade at once,
+-- each when its own client is told, by the server's clock; a mail is taken
+-- after it was sent, while the game keeps it (30 days).
+local TRADE_GAP, MAIL_LIFE = 5 * 60, 31 * DAY
 -- Our record may be filled up to this many bytes; the oldest entries go
 -- first (see Pack.MAX_RECORD).
 local RECORD_BUDGET = 16000
@@ -387,11 +393,60 @@ function Log.ReadVault()
     ns.Debug("guild vault log: %d entries read, %d kept", #entries, #record.gl.e)
 end
 
--- A name as the vault's log gives it (maybe with a realm) against a
--- member's.
-local function SameName(vaultName, name)
-    vaultName = vaultName:match("^([^%-]+)") or vaultName
-    return name ~= nil and vaultName:lower() == name:lower()
+-- Two names alike, either maybe with a realm.
+local function Bare(name)
+    return (name:match("^([^%-]+)") or name):lower()
+end
+
+local function SameName(a, b)
+    return type(a) == "string" and type(b) == "string" and Bare(a) == Bare(b)
+end
+
+-- Pairs the candidates ({ a, b, gap, order }), the closest in time first;
+-- a line already paired takes no other.
+local function Pair(candidates)
+    table.sort(candidates, function(x, y)
+        if x.gap ~= y.gap then
+            return x.gap < y.gap
+        end
+        return x.order < y.order
+    end)
+    for _, pair in ipairs(candidates) do
+        if not pair.a.pair and not pair.b.pair then
+            pair.a.pair, pair.b.pair = pair.b, pair.a
+        end
+    end
+end
+
+-- Money one bank character gave another (givers, their trades and mail
+-- out) and the other took (takers): the same money, by the same way, each
+-- naming the other; a trade at once, a mail taken after it was sent.
+local function BetweenBanks(givers, takers)
+    local byMoney = {}
+    for _, taker in ipairs(takers) do
+        local m = taker.line.entry.m
+        byMoney[m] = byMoney[m] or {}
+        table.insert(byMoney[m], taker)
+    end
+    local candidates = {}
+    for _, giver in ipairs(givers) do
+        local given = giver.line.entry
+        for _, taker in ipairs(byMoney[given.m] or {}) do
+            local taken = taker.line.entry
+            local gap = taken.t - given.t
+            local within
+            if given.v == Log.TRADE then
+                within = math.abs(gap) <= TRADE_GAP
+            else
+                within = gap >= -TRADE_GAP and gap <= MAIL_LIFE
+            end
+            if within and taken.v == given.v and taker.line.bank ~= giver.line.bank and SameName(given.w, taker.name)
+                    and SameName(taken.w, giver.name) then
+                candidates[#candidates + 1] = { a = giver.line, b = taker.line, gap = math.abs(gap), order = #candidates }
+            end
+        end
+    end
+    Pair(candidates)
 end
 
 -- What the Log subtab shows: every entry, newest first, as { source =
@@ -399,9 +454,11 @@ end
 -- "vault" (tabs = the vault's tab names), entry, at = its time }.
 -- A bank character's money put into the vault or taken from it, and the
 -- vault's entry for it, are paired: each line has the other as pair, and
--- the vault's takes the bank character's time, which is exact.
+-- the vault's takes the bank character's time, which is exact. So are the
+-- giver's and the taker's entries of money one bank character gave another
+-- (see BetweenBanks).
 function Log.Lines(guild)
-    local lines, atVault = {}, {}
+    local lines, atVault, givers, takers = {}, {}, {}, {}
     for guid, record in pairs(guild and guild.members or {}) do
         if record.lg and Data.IsShareable(record) and ns.Roster.IsKnownGUID(guid) then
             local name = Data.NameOf(guid, record)
@@ -410,10 +467,14 @@ function Log.Lines(guild)
                 lines[#lines + 1] = line
                 if entry.v == Log.VAULT and entry.m then
                     atVault[#atVault + 1] = { line = line, name = name }
+                elseif (entry.v == Log.TRADE or entry.v == Log.MAIL) and entry.m then
+                    local list = entry.a == Log.OUT and givers or takers
+                    list[#list + 1] = { line = line, name = name }
                 end
             end
         end
     end
+    BetweenBanks(givers, takers)
     local types = Pack.VAULT_TYPES
     local vault, tabs = Log.VaultEntries(guild)
     -- Every vault entry a bank character's could be, then the closest in
@@ -430,21 +491,15 @@ function Log.Lines(guild)
                 local gap = math.abs(mine.t - entry.t)
                 if mine.m == entry.m and mine.a == (taken and Log.IN or Log.OUT) and SameName(entry.w, own.name)
                         and gap <= PAIR_GAP then
-                    candidates[#candidates + 1] = { vault = line, bank = own.line, gap = gap, order = #candidates }
+                    candidates[#candidates + 1] = { a = line, b = own.line, gap = gap, order = #candidates }
                 end
             end
         end
     end
-    table.sort(candidates, function(a, b)
-        if a.gap ~= b.gap then
-            return a.gap < b.gap
-        end
-        return a.order < b.order
-    end)
-    for _, pair in ipairs(candidates) do
-        if not pair.vault.pair and not pair.bank.pair then
-            pair.vault.pair, pair.bank.pair = pair.bank, pair.vault
-            pair.vault.at = pair.bank.entry.t
+    Pair(candidates)
+    for _, line in ipairs(lines) do
+        if line.source == "vault" and line.pair then
+            line.at = line.pair.entry.t
         end
     end
     table.sort(lines, function(a, b)
@@ -457,7 +512,9 @@ function Log.Lines(guild)
         if a.bank ~= b.bank then
             return (a.bank or "") < (b.bank or "")
         end
-        return a.order < b.order
+        -- At the same time, the later written first, as each log is
+        -- written oldest first: a mail's postage above its money.
+        return a.order > b.order
     end)
     return lines
 end
