@@ -63,9 +63,13 @@ Pack.VAULT_TYPES = {
 --       hour), y = type (Log.VAULT_TYPES), w = name, then either i, n, s,
 --       b = tab (the tab moved from), d = the tab moved to, or
 --       m = copper, r = the vault's copper after it (nil: unknown) }... } },
---       oldest first.
--- rq, ra and lg are nil until known: a client that lost its data does not
--- tell the guild it has none.
+--       oldest first,
+--   ac = the requests the member accepted (a bank character, an officer or
+--       the guild master): { ["<requester GUID>:<id>"] = when }. Apart
+--       from ra, which older versions read to the letter, at the end of the
+--       record, which they skip: to them an accepted request is pending.
+-- rq, ra, lg and ac are nil until known: a client that lost its data does
+-- not tell the guild it has none.
 -- A packed record is prefixed by its length, so fields added later are
 -- skipped by older readers.
 local ABSENT, PRESENT = 0, 1
@@ -250,6 +254,36 @@ local function ReadAnswers(reader)
     return answers
 end
 
+local function WriteAccepted(writer, accepted)
+    if not accepted then
+        writer:UInt(0)
+        return
+    end
+    local keys = SortedKeys(accepted)
+    writer:UInt(#keys + 1)
+    for _, key in ipairs(keys) do
+        local requester, id = key:match("^(.+):(%d+)$")
+        writer:Str(requester)
+        writer:UInt(tonumber(id))
+        writer:UInt(accepted[key])
+    end
+end
+
+local function ReadAccepted(reader)
+    local count = reader:UInt()
+    if count == 0 then
+        return nil
+    elseif count - 1 > LIMITS.answers then
+        error("too many accepted requests", 0)
+    end
+    local accepted = {}
+    for _ = 1, count - 1 do
+        local key = reader:Str() .. ":" .. reader:UInt()
+        accepted[key] = reader:UInt()
+    end
+    return accepted
+end
+
 -- Logs: oldest first, each time written as the gap from the one before,
 -- which most often fits in one or two bytes.
 local function WriteWhat(writer, entry)
@@ -386,6 +420,8 @@ local function RecordBody(guid, record)
     -- Since 0.3.0: older readers skip them.
     WriteLog(writer, record.lg)
     WriteGuildLog(writer, record.gl)
+    -- Since 0.3.2: older readers skip it.
+    WriteAccepted(writer, record.ac)
     return writer:Result()
 end
 
@@ -422,6 +458,10 @@ function Pack.ReadRecord(reader)
     if not reader:AtEnd() then
         record.lg = ReadLog(reader)
         record.gl = ReadGuildLog(reader)
+    end
+    -- Records packed before 0.3.2 end here.
+    if not reader:AtEnd() then
+        record.ac = ReadAccepted(reader)
     end
     -- Anything left was added by a later version.
     return guid, record

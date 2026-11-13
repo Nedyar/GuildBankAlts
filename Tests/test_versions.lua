@@ -3,7 +3,7 @@ local H = ...
 -- Members on the last release and members on this version share one guild:
 -- both must keep talking, whoever holds the bank character. The release is
 -- taken from its git tag (H.Release); it runs on this LibGuildSync.
-local RELEASE = "v0.3.0"
+local RELEASE = "v0.3.1"
 
 H.section("Versions: against " .. RELEASE)
 local old = H.Release(RELEASE)
@@ -145,3 +145,32 @@ for _, line in ipairs(oldMember.printed) do
 end
 H.eq(told, bank.ns.VERSION_NUM > oldMember.ns.VERSION_NUM, "members on " .. RELEASE .. " are told to update only once this version is out")
 Errors(world, "log across versions")
+
+-- An accepted request (since 0.3.2): the bank character on this version
+-- accepts a request of a member on the release, whose client keeps taking
+-- its record, and sees the request pending; members on this version see it
+-- accepted.
+world = H.NewWorld({ seed = 47, senderFormat = "short", strictWhispers = true })
+bank = world:NewClient("Bank Holder", { rank = "Banco", rankIndex = 4, containers = { [0] = { size = 16, [1] = { 2589, 20 } } } })
+oldMember = world:NewClient("Old Member", { rank = "Miembro", rankIndex = 3, addons = OLD })
+newMember = world:NewClient("New Member", { rank = "Miembro", rankIndex = 3 })
+for _, client in ipairs({ bank, oldMember, newMember }) do
+    world:Login(client)
+end
+world:RunFor(60)
+local id = oldMember.ns.Requests.Create(bank.guid, "item:2589", 5, "", 1)
+world:RunFor(150)
+H.check(id ~= nil and bank.ns.Requests.Accept(oldMember.guid, id), "the bank character accepts the request of a member on " .. RELEASE)
+world:RunFor(200)
+local function StateAt(client)
+    local view = client.ns.Requests.Find(client.ns.Data.CurrentGuild(false), oldMember.guid, id)
+    return view and view.state
+end
+local copy = oldMember.ns.Data.GetGuild("Test Guild").members[bank.guid]
+H.check(copy ~= nil and copy.t == bank.ns.Data.GetOwnRecord(false).t, "who keeps taking the bank character's record")
+H.eq(StateAt(oldMember), "pending", "and sees the request pending")
+H.eq(StateAt(newMember), "accepted", "a member on this version sees it accepted")
+world:Trade(bank, oldMember, { [1] = { 2589, 5 } }, {})
+world:RunFor(200)
+H.eq(StateAt(oldMember), "approved", "delivered, approved for the member on " .. RELEASE)
+Errors(world, "accepted across versions")

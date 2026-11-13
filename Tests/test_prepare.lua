@@ -46,8 +46,24 @@ for _, client in ipairs({ bank, alice, mike }) do
 end
 world:RunFor(60)
 local Requests = alice.ns.Requests
+-- A request accepted, as the bank character would accept it, the stock
+-- aside: these tests are about getting accepted requests ready (Prepare
+-- and Mail are only for them). Once the bank character sees it, as it
+-- would to accept it (else it drops its answer to a request it does not
+-- know).
+local function Accept(requesterGUID, id)
+    if not bank.ns.Requests.Find(bank.ns.Data.CurrentGuild(false), requesterGUID, id) then
+        world:RunFor(150)
+    end
+    local record = bank.ns.Data.GetOwnRecord(true)
+    record.ac = record.ac or {}
+    record.ac[bank.ns.Requests.Key(requesterGUID, id)] = bank.ns.Now()
+    bank.ns.Data.TouchOwn(record)
+end
 local byMail = Requests.Create(bank.guid, "item:" .. CLOTH, 48, "", Requests.BY_MAIL)
 local inPerson = mike.ns.Requests.Create(bank.guid, "item:" .. CLOTH, 5, "", Requests.IN_PERSON)
+Accept(alice.guid, byMail)
+Accept(mike.guid, inPerson)
 world:RunFor(150)
 Errors(world, "requests")
 
@@ -280,10 +296,11 @@ local attached = {}
 for slot, item in pairs(bank.sendMail) do
     attached[slot] = { item[1], item[2] }
 end
+local aliceTold = #alice.printed
 world:Mail(bank, "Alice Smith", attached, { cod = 90 })
 world:RunFor(150)
 local view = Find(alice.ns.Requests.List(alice.ns.Data.CurrentGuild(false)), function(v) return v.id == byMail and v.requester == alice.guid end)
-H.eq(view and view.state, "approved", "once sent, the request is delivered")
+H.check(view == nil and Printed(alice, "your request was delivered", aliceTold), "once sent, the request is delivered: it goes")
 local log = bank.ns.Data.GetOwnRecord(false).lg
 H.check(Find(log, function(e) return e.v == bank.ns.Log.POSTAGE and e.m == 90 end) ~= nil, "and its postage is in the log")
 CloseMailbox()
@@ -296,6 +313,7 @@ for slot = 1, 15 do
 end
 world:SetContainer(bank, 1, big)
 local many = Requests.Create(bank.guid, "item:" .. CLOTH, 290, "", Requests.BY_MAIL)
+Accept(alice.guid, many)
 world:RunFor(150)
 page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
 OpenMailbox()
@@ -327,6 +345,7 @@ Errors(world, "not enough")
 H.section("Prepare: a stack split off into the mail")
 world:SetContainer(bank, 1, { size = 16, [1] = { CLOTH, 20 }, [2] = { CLOTH, 20 } })
 local split = Requests.Create(bank.guid, "item:" .. CLOTH, 25, "", Requests.BY_MAIL)
+Accept(alice.guid, split)
 world:RunFor(150)
 page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
 OpenMailbox()
@@ -347,6 +366,7 @@ H.section("Prepare: bank and mailbox both open")
 world:SetContainer(bank, 1, { size = 16 })
 world:SetContainer(bank, 6, { size = 48, [1] = { CLOTH, 20 }, [2] = { CLOTH, 20 } })
 local both = Requests.Create(bank.guid, "item:" .. CLOTH, 30, "", Requests.BY_MAIL)
+Accept(alice.guid, both)
 world:RunFor(150)
 page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
 world:OpenBank(bank)
@@ -374,6 +394,7 @@ world:SetContainer(bank, 0, full)
 world:SetContainer(bank, 1, { size = 1, [1] = { ORE, 1 } })
 world:SetContainer(bank, 6, { size = 48, [1] = { CLOTH, 20 }, [2] = { CLOTH, 20 } })
 local roomless = Requests.Create(bank.guid, "item:" .. CLOTH, 30, "", Requests.BY_MAIL)
+Accept(alice.guid, roomless)
 world:RunFor(150)
 page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
 world:OpenBank(bank)
@@ -399,10 +420,12 @@ H.section("Prepare: the server answers late")
 -- its unit is in the bags. The bank holds the item in small stacks. The
 -- server carries out each move a while after it is asked, and may unlock
 -- the slots before the items show where they went: whatever the timing,
--- exactly 21 come.
+-- exactly 21 come, in two stacks (a 7, and a 14 made up of several).
 local HERB = 2447
 local herbs = Requests.Create(bank.guid, "item:" .. HERB, 21, "", Requests.IN_PERSON)
 local herb = mike.ns.Requests.Create(bank.guid, "item:" .. HERB, 1, "", Requests.IN_PERSON)
+Accept(alice.guid, herbs)
+Accept(mike.guid, herb)
 world:RunFor(150)
 page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
 local herbsRow = Row(alice, herbs)
@@ -410,13 +433,13 @@ local herbRow = Row(mike, herb)
 world:SetContainer(bank, 1, { size = 16 })
 world:OpenBank(bank)
 for _, case in ipairs({
-    { unlock = 0.1, move = 0.05, bags = 1, bank = { 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "1 3 5 6 7" },
-    { unlock = 0.2, move = 0.4, bags = 1, bank = { 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "1 3 5 6 7" },
-    { unlock = 0.1, move = 1.5, bags = 1, bank = { 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "1 3 5 6 7" },
-    { unlock = 1, move = 0.6, bags = 1, bank = { 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "1 3 5 6 7" },
+    { unlock = 0.1, move = 0.05, bags = 1, bank = { 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "1 7 14" },
+    { unlock = 0.2, move = 0.4, bags = 1, bank = { 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "1 7 14" },
+    { unlock = 0.1, move = 1.5, bags = 1, bank = { 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "1 7 14" },
+    { unlock = 1, move = 0.6, bags = 1, bank = { 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "1 7 14" },
     -- The other request's unit back in the bank: it stays there, that
     -- request's to bring.
-    { unlock = 0.1, move = 0.8, bags = 0, bank = { 1, 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "3 5 6 7" },
+    { unlock = 0.1, move = 0.8, bags = 0, bank = { 1, 2, 3, 4, 5, 6, 7 }, brings = 21, stacks = "7 14" },
     -- A full stack, and 1 split off another.
     { unlock = 0.1, move = 0.8, bags = 1, bank = { 20, 20 }, brings = 21, stacks = "1 1 20" },
 }) do
@@ -560,6 +583,8 @@ H.eq(Padlocks(), "", "no padlock while nothing is kept")
 Press(herbsRow, "prepare")
 H.eq(Padlocks(), "1 2", "a padlock on each stack kept: the 20 and the 1")
 local lock = ns.BagLocks.LockOf(buttons[1])
+H.check(lock._point and lock._point[1] == "TOPRIGHT" and lock._point[2] == buttons[1] and lock._point[4] < 0 and lock._point[5] < 0,
+    "in the icon's top right corner, all within it")
 lock._scripts.OnEnter(lock)
 local tip = table.concat(env.GameTooltip._lines, "\n")
 H.check(tip:find("Kept for a request", 1, true) and tip:find("Alice Smith asked for", 1, true) and tip:find("x21.", 1, true)
@@ -586,8 +611,8 @@ Press(herbsRow, "prepare")
 -- bank's 19 and the bags' 2, as it is.
 H.eq(KeptCounts(herbsRow), "2 19", "a click keeps what the request lacks again: " .. BagStacks(HERB))
 world:CloseBank(bank)
--- The request deleted: its stacks are let go.
-alice.ns.Requests.Delete(herbs)
+-- The request rejected: its stacks are let go.
+H.check(bank.ns.Requests.Reject(alice.guid, herbs), "(the request rejected)")
 world:RunFor(150)
 H.eq(Padlocks(), "", "once the request is no longer open, its padlocks go away")
 H.eq(KeptCounts(herbsRow), "", "and nothing is kept for it")
@@ -597,6 +622,8 @@ H.section("Prepare: two requests by mail for the same item")
 local ROOT = 2449
 local root21 = Requests.Create(bank.guid, "item:" .. ROOT, 21, "", Requests.BY_MAIL)
 local root1 = mike.ns.Requests.Create(bank.guid, "item:" .. ROOT, 1, "", Requests.BY_MAIL)
+Accept(alice.guid, root21)
+Accept(mike.guid, root1)
 world:RunFor(150)
 page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
 local root21Row, root1Row = Row(alice, root21), Row(mike, root1)
@@ -642,6 +669,83 @@ for _, case in ipairs({
     end
 end
 Errors(world, "two by mail")
+
+H.section("Prepare: a mail made ready counts towards its request first")
+-- Two requests alike, both accepted: Mail on the newer one, then sent.
+local SILK = 4306
+world:SetContainer(bank, 2, { size = 16, [1] = { SILK, 20 }, [2] = { SILK, 20 } })
+local olderSilk = Requests.Create(bank.guid, "item:" .. SILK, 20, "", Requests.BY_MAIL)
+world:RunFor(5)
+local newerSilk = Requests.Create(bank.guid, "item:" .. SILK, 20, "", Requests.BY_MAIL)
+Accept(alice.guid, olderSilk)
+Accept(alice.guid, newerSilk)
+world:RunFor(150)
+page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
+OpenMailbox()
+H.check(Press(Row(alice, newerSilk), "mail"), "Mail on the newer of two requests alike, both accepted")
+local silkMail = {}
+for slot, item in pairs(bank.sendMail or {}) do
+    silkMail[slot] = { item[1], item[2] }
+end
+world:Mail(bank, "Alice Smith", silkMail, { cod = 30 })
+world:RunFor(150)
+local function SilkView(id)
+    return Find(alice.ns.Requests.List(alice.ns.Data.CurrentGuild(false)), function(v)
+        return v.requester == alice.guid and v.id == id
+    end)
+end
+H.check(SilkView(newerSilk) == nil and SilkView(olderSilk) ~= nil and SilkView(olderSilk).delivered == 0,
+    "sent, it counts towards that request, though the other is older")
+CloseMailbox()
+Errors(world, "mail made ready")
+
+H.section("Prepare: stacks put together")
+do
+    -- A request for 35: the bags hold 1 and 20, the bank 14. The fewest
+    -- stacks are the 20, as it is, and a 15 made up of the 1, where it is,
+    -- and the bank's 14 put onto it: one move.
+    local BAR = 2840
+    local bars = Requests.Create(bank.guid, "item:" .. BAR, 35, "", Requests.IN_PERSON)
+    Accept(alice.guid, bars)
+    world:RunFor(150)
+    page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
+    local barsRow = Row(alice, bars)
+    world:SetContainer(bank, 0, { size = 16, [3] = { BAR, 1 }, [7] = { BAR, 20 } })
+    world:SetContainer(bank, 1, { size = 16 })
+    world:SetContainer(bank, 6, { size = 48, [5] = { BAR, 14 } })
+    world:OpenBank(bank)
+    world:RunFor(1)
+    local before = bank.moves or 0
+    H.check(Press(barsRow, "prepare"), "(Prepare pressed)")
+    H.eq(BagStacks(BAR), "15 20", "the bags' 1 and the bank's 14 are put together")
+    H.eq(KeptCounts(barsRow), "15 20", "both stacks kept for the request")
+    H.eq(bank.moves - before, 1, "in one move: the bank's 14 onto the 1")
+    H.eq(BankStacks(BAR), "", "(none left in the bank)")
+    -- Got ready with less than it lacks, so one of its stacks is not full;
+    -- once the rest is to be had, it goes onto that stack.
+    H.check(Press(barsRow, "release"), "(let go)")
+    world:SetContainer(bank, 0, { size = 16, [3] = { BAR, 1 }, [7] = { BAR, 20 } })
+    world:SetContainer(bank, 6, { size = 48 })
+    world:RunFor(1)
+    H.check(Press(barsRow, "prepare"), "(Prepare pressed, the bank without any)")
+    H.eq(KeptCounts(barsRow), "1 20", "with only 21 to be had, the 20 and the 1 are kept")
+    world:SetContainer(bank, 6, { size = 48, [5] = { BAR, 14 } })
+    world:RunFor(1)
+    before = bank.moves
+    H.check(Press(barsRow, "prepare"), "(Prepare pressed again, the bank with 14)")
+    H.eq(KeptCounts(barsRow), "15 20", "the rest goes onto the 1 kept before")
+    H.eq(BagStacks(BAR) .. " / " .. (bank.moves - before), "15 20 / 1", "(in the bags, in one move)")
+    -- Two full stacks and a remainder made up of three small ones.
+    H.check(Press(barsRow, "release"), "(let go again)")
+    world:SetContainer(bank, 0, { size = 16, [1] = { BAR, 4 }, [2] = { BAR, 20 } })
+    world:SetContainer(bank, 6, { size = 48, [1] = { BAR, 6 }, [2] = { BAR, 3 }, [3] = { BAR, 9 } })
+    world:RunFor(1)
+    H.check(Press(barsRow, "prepare"), "(Prepare pressed on other stacks)")
+    H.eq(KeptCounts(barsRow), "15 20", "a 15 made up of the bags' 4 and the bank's 9, and 2 of its 3")
+    H.eq(BagStacks(BAR) .. " / " .. BankStacks(BAR), "15 20 / 1 6", "the rest stays in the bank")
+    world:CloseBank(bank)
+end
+Errors(world, "put together")
 
 H.section("Prepare: only the bank character's own requests")
 world:OpenBank(alice)

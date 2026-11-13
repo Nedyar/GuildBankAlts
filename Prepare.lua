@@ -1,11 +1,14 @@
--- Prepare.lua: a bank character gets the requests made to it ready, with
--- the buttons of their rows in the Requests subtab (RequestList.lua):
+-- Prepare.lua: a bank character gets the requests made to it ready, once
+-- accepted, with the buttons of their rows in the Requests subtab
+-- (RequestList.lua):
 --   - Prepare keeps in the bags the stacks the request still lacks, in the
 --     fewest stacks: stacks of the item already there and kept for no
 --     request, as they are or split, and, with the bank open, stacks
---     brought from it, each into an empty slot. Without the bank, the bags
---     must hold enough kept for no request; without the empty slots it
---     takes, nothing moves. Once the request keeps stacks and Prepare can
+--     brought from it, each into an empty slot; when no stack holds what
+--     one is to hold, several are put together into one (onto one of the
+--     bags, as it is, or onto one it already keeps that is not full).
+--     Without the bank, the bags must hold enough kept for no request;
+--     without the empty slots it takes, nothing moves. Once the request keeps stacks and Prepare can
 --     add no more (it is ready, or the rest is not to be had now), the
 --     button is Release instead: it lets go of them;
 --   - Mail, for a request by mail, at a mailbox: a mail on the Send tab
@@ -13,7 +16,8 @@
 --     split off), as many as one mail takes, the requester as the recipient,
 --     and cash on delivery of the postage the requester pays: 30 copper per
 --     stack. It takes the stacks kept for the request and those kept for
---     none, never those kept for another request.
+--     none, never those kept for another request. Once sent, its items
+--     count towards that request first (Deliveries.MailReadyFor).
 -- Each button is enabled only when it can do its part, and its tooltip says
 -- what it does or why it cannot (Prepare.Actions). The player sends the
 -- mail, or trades the items, by hand.
@@ -24,7 +28,8 @@
 -- stays kept while it is in the bags with the count it was kept with: moved
 -- to another slot, it still is; split, added to (by hand, or by the game
 -- stacking loot or mail onto it) or out of the bags (traded, mailed, back
--- in the bank), it is let go. So are the stacks of requests no longer open.
+-- in the bank), it is let go. So are the stacks of requests no longer
+-- accepted (rejected, all delivered, or deleted).
 --
 -- Items move one at a time: a move is the server's, and the slots look as
 -- they were until it answers (their locks may even clear before the items
@@ -186,22 +191,24 @@ local function EmptySlots(ctx)
     return slots
 end
 
--- The stack a step takes next, from stacks sorted BySize: the stack, and
--- how many of it (fewer than it holds: split). In the fewest stacks: one of
--- the size wanted (a full one, or just what is left); else what is left
--- split off a bigger one; else the biggest there is.
-local function NextStack(stacks, left, size)
-    local want = math.min(left, size)
+-- How many stacks count of the item takes at least.
+local function StacksFor(count, size)
+    return math.ceil(math.max(count, 0) / size)
+end
+
+-- Up to need of the item, from stacks sorted BySize: the stack, and how
+-- many of it (fewer than it holds: split). A stack of just that many; else
+-- that many split off the smallest bigger one; else the biggest there is,
+-- whole.
+local function Pick(stacks, need)
     for _, stack in ipairs(stacks) do
-        if stack.count == want then
-            return stack, want
+        if stack.count == need then
+            return stack, need
         end
     end
-    if want < size then
-        for _, stack in ipairs(stacks) do
-            if stack.count > want then
-                return stack, want
-            end
+    for _, stack in ipairs(stacks) do
+        if stack.count > need then
+            return stack, need
         end
     end
     local biggest = stacks[#stacks].count
@@ -212,24 +219,88 @@ local function NextStack(stacks, left, size)
     end
 end
 
+-- Prepare's next move, in the fewest stacks: from the stacks it may take,
+-- sorted BySize, towards left, the count the request still lacks, with base
+-- the stack being made up for it, if one is ({ count, target }). Returns
+-- the stack, how many of it, and how:
+--   "take": a stack of its own for the request: kept where it is (a whole
+--     stack of the bags), or moved or split off into an empty slot. Of the
+--     size of a full one, or of what is left; else the biggest there is,
+--     if the rest takes no more stacks than it would anyway;
+--   "start": no stack will do on its own: one is made up of several,
+--     starting with this one, whole (the biggest of the bags, kept where
+--     it is; else the biggest, moved into an empty slot), to hold target
+--     (the 4th value);
+--   "onto": put onto the base, whole or split off.
+local function NextMove(stacks, left, size, base)
+    if base then
+        local stack, count = Pick(stacks, math.min(left, base.target - base.count))
+        return stack, count, "onto"
+    end
+    local want = math.min(left, size)
+    local stack, count = Pick(stacks, want)
+    if count == want or StacksFor(left - count, size) < StacksFor(left, size) then
+        return stack, count, "take"
+    end
+    local start = stacks[#stacks]
+    for _, other in ipairs(stacks) do
+        if other.inBags then
+            start = other
+        end
+    end
+    return start, start.count, "start", want
+end
+
 -- Whether taking count of a stack keeps it as it is (no move).
 local function InPlace(stack, count)
     return stack.inBags and count == stack.count
 end
 
+-- Whether a move takes an empty slot: a stack of its own, moved or split
+-- off, or the start of one moved.
+local function TakesSlot(stack, count, how)
+    return how == "take" and not InPlace(stack, count) or how == "start" and not stack.inBags
+end
+
+-- The stack being made up for the request when Prepare starts: the biggest
+-- of its own not full (kept before, as when Prepare ran without the bank),
+-- to be filled up with what it lacks, if that takes fewer stacks than what
+-- it lacks would on its own; or nil.
+local function OwnBase(own, missing, size)
+    local base
+    for _, stack in ipairs(own) do
+        if stack.count < size and (not base or stack.count > base.count) then
+            base = stack
+        end
+    end
+    if not base or StacksFor(missing - (size - base.count), size) >= StacksFor(missing, size) then
+        return nil
+    end
+    return { bag = base.bag, slot = base.slot, count = base.count, target = math.min(size, base.count + missing) }
+end
+
 -- How many empty slots getting what is missing takes, step by step as the
--- prepare step will: each stack moved or split off takes one.
-local function SlotsNeeded(stacks, missing, size)
+-- prepare step will (NextMove).
+local function SlotsNeeded(stacks, missing, size, base)
     local copies = {}
     for index, stack in ipairs(stacks) do
         copies[index] = { count = stack.count, inBags = stack.inBags, bag = stack.bag, slot = stack.slot }
     end
+    base = base and { count = base.count, target = base.target }
     local slots = 0
     while missing > 0 and #copies > 0 do
         BySize(copies)
-        local stack, count = NextStack(copies, missing, size)
-        if not InPlace(stack, count) then
+        local stack, count, how, target = NextMove(copies, missing, size, base)
+        if TakesSlot(stack, count, how) then
             slots = slots + 1
+        end
+        if how == "start" then
+            base = { count = count, target = target }
+        elseif how == "onto" then
+            base.count = base.count + count
+            if base.count >= base.target then
+                base = nil
+            end
         end
         stack.count = stack.count - count
         if stack.count <= 0 then
@@ -295,7 +366,8 @@ local function Keepers()
     return keepers
 end
 
--- The open requests made to us: request -> its view.
+-- The accepted requests made to us, the only ones stacks are kept for:
+-- request -> its view.
 local function OpenRequests()
     local guild = ns.Data.CurrentGuild(false)
     if not guild or not ns.playerGUID then
@@ -303,7 +375,7 @@ local function OpenRequests()
     end
     local open = {}
     for _, view in ipairs(ns.Requests.List(guild)) do
-        if view.request.b == ns.playerGUID and not ns.Requests.IsClosed(view.state) then
+        if view.request.b == ns.playerGUID and view.state == "accepted" then
             open[view.key] = view
         end
     end
@@ -386,7 +458,8 @@ function Prepare.KeptAt(bag, slot)
     return nil
 end
 
--- An open request made to us, by its key: its view and the guild, or nil.
+-- An accepted request made to us, by its key: its view and the guild, or
+-- nil.
 function Prepare.ViewOf(requestKey)
     local open, guild = OpenRequests()
     return open and open[requestKey], guild
@@ -498,17 +571,18 @@ local function Merge(from, to, keep)
         { bag = from.bag, slot = from.slot, count = from.count - moved, keep = keep and from.own })
 end
 
--- Part of a stack, into an empty slot: split off now, put down next step.
-local function Split(stack, count, empty, keep)
+-- Part of a stack, into an empty slot or onto a stack of the item (to,
+-- with its count): split off now, put down next step.
+local function Split(stack, count, to, keep)
     C_Container.SplitContainerItem(stack.bag, stack.slot, count)
-    job.cursor = { from = stack, to = empty, count = count, keep = keep }
+    job.cursor = { from = stack, to = to, count = count, keep = keep }
 end
 
 local function PutDown()
     local split = job.cursor
     job.cursor = nil
     C_Container.PickupContainerItem(split.to.bag, split.to.slot)
-    Expect({ bag = split.to.bag, slot = split.to.slot, count = split.count, keep = split.keep },
+    Expect({ bag = split.to.bag, slot = split.to.slot, count = (split.to.count or 0) + split.count, keep = split.keep },
         { bag = split.from.bag, slot = split.from.slot, count = split.from.count - split.count, keep = split.from.own })
 end
 
@@ -522,8 +596,9 @@ end
 -- Steps: each returns true when it moved something or waits, nil when its
 -- part is done.
 
--- Prepare: what the request lacks, kept for it in the bags. Before the
--- first move, the bags must have room for all of it: else nothing moves.
+-- Prepare: what the request lacks, kept for it in the bags, in the fewest
+-- stacks (NextMove). Before the first move, the bags must have room for
+-- all of it: else nothing moves.
 local function PrepareStep()
     if not Arrived() then
         return true
@@ -533,10 +608,12 @@ local function PrepareStep()
     end
     if not job.missing then
         Prepare.Validate()
-        job.mine = Total(OwnStacks(job))
+        local own = OwnStacks(job)
+        job.mine = Total(own)
         job.missing, job.brought = job.needed - job.mine, 0
         if job.missing > 0 then
-            job.slotsNeeded = SlotsNeeded(FreeStacks(job, job.withBank), job.missing, job.size)
+            job.base = OwnBase(own, job.missing, job.size)
+            job.slotsNeeded = SlotsNeeded(FreeStacks(job, job.withBank), job.missing, job.size, job.base)
             if job.slotsNeeded > #EmptySlots(job) then
                 job.full = true
                 return nil
@@ -547,14 +624,33 @@ local function PrepareStep()
     if left <= 0 then
         return nil
     end
+    local base = job.base
+    if base and not Shows({ bag = base.bag, slot = base.slot, count = base.count }) then
+        -- The stack being made up is no longer as it was left (moved by
+        -- hand): the rest goes in stacks of its own.
+        job.base, base = nil, nil
+    end
     local stacks = BySize(FreeStacks(job, job.withBank))
     if #stacks == 0 then
         job.short = true
         return nil
     end
-    local stack, count = NextStack(stacks, left, job.size)
-    if InPlace(stack, count) then
+    local stack, count, how, target = NextMove(stacks, left, job.size, base)
+    if how == "onto" then
+        if count < stack.count then
+            Split(stack, count, { bag = base.bag, slot = base.slot, count = base.count }, true)
+        else
+            Merge(stack, base, true)
+        end
+        base.count = base.count + count
+        if base.count >= base.target then
+            job.base = nil
+        end
+    elseif InPlace(stack, count) then
         Keep(job.request, stack.id, count)
+        if how == "start" then
+            job.base = { bag = stack.bag, slot = stack.slot, count = count, target = target }
+        end
     else
         local empty = EmptySlots(job)[1]
         if not empty then
@@ -564,6 +660,9 @@ local function PrepareStep()
             Split(stack, count, empty, true)
         else
             MoveTo(stack, empty, true)
+        end
+        if how == "start" then
+            job.base = { bag = empty.bag, slot = empty.slot, count = count, target = target }
         end
     end
     job.brought = job.brought + count
@@ -762,6 +861,8 @@ local function FinishMail()
     local cod = ns.Requests.MAIL_FEE * stacks
     SendMailRadioButton_OnClick(2)
     MoneyInputFrame_SetCopper(SendMailMoney, cod)
+    -- Sent, its items count towards this request first.
+    ns.Deliveries.MailReadyFor(job.requester, job.request)
     ns.Print(L["mail ready for %s: %s x%d in %d |4stack:stacks;, %s cash on delivery. Check it and send it."], job.name, ItemText(),
         count, stacks, ns.BankView.Coin(cod, "Copper"))
     if count < job.target and not job.full then
@@ -806,11 +907,11 @@ end
 
 -- Buttons ------------------------------------------------------------------------------------
 
--- Whether a request is one of ours to get ready: a bank character's open
--- request made to it, with something still to deliver.
+-- Whether a request is one of ours to get ready: a bank character's
+-- accepted request made to it, with something still to deliver.
 local function Ours(view)
     return view ~= nil and ns.playerGUID ~= nil and view.request.b == ns.playerGUID and ns.Ranks.IsBank(ns.playerGUID)
-        and not ns.Requests.IsClosed(view.state) and view.request.q - view.delivered > 0
+        and view.state == "accepted" and view.request.q - view.delivered > 0
 end
 
 -- What getting a request ready works with: the request, its item and how
@@ -833,7 +934,8 @@ end
 local function PrepareAction(ctx)
     local action = { action = "prepare", text = L["Prepare"] }
     local withBank = ns.Bank.IsBankOpen()
-    local kept = Total(OwnStacks(ctx))
+    local own = OwnStacks(ctx)
+    local kept = Total(own)
     local missing = ctx.needed - kept
     local free = FreeStacks(ctx, withBank)
     local held = Total(free)
@@ -848,7 +950,7 @@ local function PrepareAction(ctx)
     elseif not withBank and held < missing then
         action.tip = L["Your bags hold %d of the %d it still lacks, kept for no request: open your bank to bring the rest."]:format(held, missing)
     else
-        local slots = SlotsNeeded(free, missing, ctx.size)
+        local slots = SlotsNeeded(free, missing, ctx.size, OwnBase(own, missing, ctx.size))
         if slots > #EmptySlots(ctx) then
             action.tip = L["Not enough room in your bags: %d free |4slot:slots; needed."]:format(slots)
         else
@@ -952,6 +1054,7 @@ function Prepare.Run(view, action)
     end
     local guild = ns.Data.CurrentGuild(false)
     job = Context(view)
+    job.requester = view.requester
     job.name = ns.Data.NameOf(view.requester, guild and guild.members[view.requester])
     job.phase = action == "mail" and "mail" or "prepare"
     job.withBank = job.phase == "prepare" and ns.Bank.IsBankOpen()

@@ -37,6 +37,7 @@ local BLIZZARD_TABS = { "ChatTab", "RosterTab", "GuildBenefitsTab", "GuildInfoTa
 local OLD_TABS = { { name = "GuildProfessionsRecipesGuildTab", order = 10 } }
 
 local communities, tab, page
+local microMark      -- on the micro menu's button (CreateMicroMark)
 local remembered     -- the Blizzard tab that was selected when our panel opened
 local hiddenChatBar  -- the chat's scroll bar, while our panel hides it
 local faded = {}     -- [Blizzard frame] = its alpha, while our panel hides it
@@ -86,6 +87,21 @@ local function TabAbove()
     return above
 end
 
+-- Blizzard's notification mark, as its Roster tab shows it for applicants:
+-- centred on parent's top right corner (moved by x, y), on a frame of its
+-- own, over parent, so none of parent's glows (selected, pointed at) covers
+-- it. At the atlas's own size. Hidden at first.
+function GuildTab.NewMark(parent, x, y)
+    local mark = CreateFrame("Frame", nil, parent)
+    mark:SetSize(1, 1)
+    mark:SetPoint("CENTER", parent, "TOPRIGHT", x or 0, y or 0)
+    mark.Icon = mark:CreateTexture(nil, "OVERLAY")
+    mark.Icon:SetAtlas("communities-icon-notification", true)
+    mark.Icon:SetPoint("CENTER")
+    mark:Hide()
+    return mark
+end
+
 -- Subtabs ---------------------------------------------------------------------------
 
 local function UpdateSubTabs()
@@ -100,6 +116,14 @@ local function UpdateSubTabs()
         PanelTemplates_TabResize(subtab, 0)
     end
     PanelTemplates_SetTab(page.SubTabs, selected)
+    -- The mark on the top right corner of the Requests subtab's art, not of
+    -- its frame: the art stands at the frame's bottom, shorter than it, and
+    -- shorter still while not selected (PanelTopTabButtonMixin).
+    local requests = page.SubTabs.Tabs[2]
+    local art = (selected == 2 and requests.MiddleActive or requests.Middle) or requests
+    requests.Mark:ClearAllPoints()
+    requests.Mark:SetPoint("CENTER", art, "TOPRIGHT", 0, -2)
+    requests.Mark:SetShown(waiting > 0)
 end
 
 local UpdateBadge
@@ -109,10 +133,6 @@ local function RefreshPage()
         return
     end
     local shown = SUBTABS[selected]
-    -- Our rejected requests, listed (unless only open ones are): seen.
-    if shown == "requests" and not onlyOpen then
-        ns.RequestList.MarkSeen()
-    end
     UpdateSubTabs()
     UpdateBadge()
     page.Bank:SetShown(shown == "bank")
@@ -123,6 +143,11 @@ local function RefreshPage()
     for _, check in ipairs({ page.OnlyOpen, page.OnlyMine }) do
         check:SetShown(shown == "requests")
         check.Label:SetShown(shown == "requests")
+    end
+    for _, button in ipairs({ page.DeleteRejected, page.RejectShort }) do
+        local state = shown == "requests" and ns.RequestList.BulkState(button.action)
+        button:SetShown(state and state.shown or false)
+        button:SetEnabled(state and state.enabled or false)
     end
     for _, check in ipairs(page.LogFilters) do
         check:SetShown(shown == "log")
@@ -162,6 +187,22 @@ local function FilterCheck(text, checked, onClick)
     return check
 end
 
+-- A button under the request list acting on several requests at once:
+-- action is RequestList.BulkState's.
+local function BulkButton(action, text)
+    local button = CreateFrame("Button", nil, page, "UIPanelButtonTemplate")
+    button.action = action
+    button:SetText(text)
+    button:SetSize(math.max(button:GetTextWidth() + 32, 110), 22)
+    button:SetMotionScriptsWhileDisabled(true)
+    button:SetScript("OnClick", function(self)
+        ns.RequestList.BulkRun(self.action)
+    end)
+    button:SetScript("OnEnter", ns.RequestList.BulkOnEnter)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    return button
+end
+
 -- Above the window's inset, where Guild Info has its headings.
 local function CreateSubTabs()
     local holder = CreateFrame("Frame", nil, page)
@@ -180,6 +221,9 @@ local function CreateSubTabs()
         end)
         tabs[i] = subtab
     end
+    -- On the Requests subtab, the mark of the guild tab: what it counts
+    -- (placed by UpdateSubTabs).
+    tabs[2].Mark = GuildTab.NewMark(tabs[2])
     holder.Tabs = tabs
     PanelTemplates_SetNumTabs(holder, #tabs)
     page.SubTabs = holder
@@ -330,6 +374,12 @@ local function CreatePage()
         onlyMine = checked
     end)
     page.OnlyMine:SetPoint("LEFT", page.OnlyOpen.Label, "RIGHT", 16, 0)
+    -- On the right, the request list's buttons acting on several requests
+    -- at once (RequestList.BulkState).
+    page.DeleteRejected = BulkButton("deleteRejected", L["Delete my rejected"])
+    page.DeleteRejected:SetPoint("RIGHT", page.Content, "BOTTOMRIGHT", 0, -15)
+    page.RejectShort = BulkButton("rejectShort", L["Reject short of stock"])
+    page.RejectShort:SetPoint("RIGHT", page.DeleteRejected, "LEFT", -6, 0)
     -- The log's: items and money, the bank characters' and the vault's.
     page.LogFilters = {}
     for index, filter in ipairs({
@@ -350,13 +400,39 @@ end
 
 -- The tab ---------------------------------------------------------------------------
 
--- Blizzard's notification mark, as its Roster tab shows for applicants:
--- while requests wait for us, as a bank character, or ours were rejected
--- since we last saw them (RequestList.ForMe).
+-- The notification mark (GuildTab.NewMark): while requests wait for us, as
+-- a bank character, or ours are rejected (until we delete them, or for a
+-- week) or accepted (until we point at them in the list)
+-- (RequestList.ForMe). On our tab, and on the micro menu's button that
+-- opens the guild window.
 function UpdateBadge()
+    local shown = ns.RequestList.ForMe() > 0
     if tab then
-        tab.Badge:SetShown(ns.RequestList.ForMe() > 0)
+        tab.Badge:SetShown(shown)
     end
+    if microMark then
+        microMark:SetShown(shown)
+    end
+end
+
+-- The mark on the micro menu's Guild & Communities button, as the game
+-- shows its own there (unread messages, invitations): of its template, on
+-- a frame of our own, which the game's updates leave alone. When both
+-- show, they are one.
+local function CreateMicroMark()
+    if GuildMicroButton then
+        microMark = CreateFrame("Frame", nil, GuildMicroButton, "MainMenuBarMicroButtonNotificationTemplate")
+        microMark:Hide()
+    end
+end
+
+-- What the Requests subtab counts and the marks of both tabs, again, the
+-- list left as it is (RequestList: a notice seen by pointing at its row).
+function GuildTab.UpdateMarks()
+    if page and page:IsShown() then
+        UpdateSubTabs()
+    end
+    UpdateBadge()
 end
 
 -- Runs after Blizzard lays out its tabs. Ours goes under the lowest one
@@ -391,10 +467,7 @@ local function Setup()
     tab:SetFrameLevel(TAB_LEVEL)
     tab.Icon:SetTexture(ICON)
     tab.tooltip = L["Guild Bank"]
-    tab.Badge = tab:CreateTexture(nil, "OVERLAY")
-    tab.Badge:SetAtlas("communities-icon-notification", true)
-    tab.Badge:SetPoint("CENTER", tab, "TOPRIGHT", 0, 0)
-    tab.Badge:Hide()
+    tab.Badge = GuildTab.NewMark(tab)
     -- After the template's own click (its sound, and marking itself).
     tab:HookScript("OnClick", ShowPage)
     tab:Hide()
@@ -407,12 +480,6 @@ local function Setup()
     communities:HookScript("OnHide", function()
         HidePage(true)
     end)
-    ns.On("DataChanged", function()
-        ns.Debounce("GuildTabRefresh", 0.3, function()
-            UpdateBadge()
-            RefreshPage()
-        end)
-    end)
     -- The bank characters' Prepare and Mail buttons follow the bags, the
     -- bank, the mailbox and the mail being written (Prepare.lua).
     ns.On("PrepareChanged", function()
@@ -420,16 +487,22 @@ local function Setup()
             ns.RequestList.Show(page.Requests, onlyOpen, onlyMine)
         end
     end)
-    ns.On("RosterUpdated", function()
-        ns.Debounce("GuildTabRefresh", 0.3, function()
-            UpdateBadge()
-            RefreshPage()
-        end)
-    end)
     Update()
     UpdateBadge()
 end
 
 function GuildTab.Init()
+    -- The micro menu's mark from the start; the tab once the guild window
+    -- is loaded (when first opened).
+    CreateMicroMark()
+    local function Refresh()
+        ns.Debounce("GuildTabRefresh", 0.3, function()
+            UpdateBadge()
+            RefreshPage()
+        end)
+    end
+    ns.On("DataChanged", Refresh)
+    ns.On("RosterUpdated", Refresh)
+    UpdateBadge()
     EventUtil.ContinueOnAddOnLoaded("Blizzard_Communities", Setup)
 end

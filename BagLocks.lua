@@ -14,7 +14,9 @@ local BagLocks = {}
 ns.BagLocks = BagLocks
 
 local ATLAS = "Bags-padlock-authenticator"
-local WIDTH, HEIGHT = 13, 16
+-- Within the item's icon (37 x 37), in its top right corner, clear of the
+-- stack count at the bottom.
+local WIDTH, HEIGHT, INSET = 18, 22, 2
 
 local locks = setmetatable({}, { __mode = "k" })  -- item button -> its padlock
 local frames = {}                                  -- the bag windows followed
@@ -42,7 +44,7 @@ local function Lock(button)
     if not lock then
         lock = CreateFrame("Frame", nil, button)
         lock:SetSize(WIDTH, HEIGHT)
-        lock:SetPoint("TOPRIGHT", button, "TOPRIGHT", 1, 1)
+        lock:SetPoint("TOPRIGHT", button, "TOPRIGHT", -INSET, -INSET)
         lock:SetFrameLevel(button:GetFrameLevel() + 5)
         local icon = lock:CreateTexture(nil, "OVERLAY")
         icon:SetAllPoints()

@@ -16,6 +16,14 @@ local function Find(list, fn)
     end
 end
 
+-- The notification mark on a client's micro menu button that opens the
+-- guild window: of the game's template for it, on that button.
+local function MicroMark(client)
+    return Find(client.created, function(frame)
+        return frame._template == "MainMenuBarMicroButtonNotificationTemplate" and frame._parent == client.env.GuildMicroButton
+    end)
+end
+
 local function Printed(client, text, since)
     for i = (since or 0) + 1, #client.printed do
         if client.printed[i]:find(text, 1, true) then
@@ -160,12 +168,37 @@ H.eq(bank.ns.RequestList.WaitingForMe(), 1, "one request waits for the bank char
 H.eq(alice.ns.RequestList.WaitingForMe(), 0, "none waits for a member")
 Errors(world, "request made")
 
-H.section("Requests: rejecting and deleting")
-local second = Requests.Create(bank.guid, "item:" .. HERB, 5, "", IN_PERSON)
-world:RunFor(150)
+H.section("Requests: accepting, rejecting and deleting")
 local function ViewAt(client, requesterGUID, requestID)
     return client.ns.Requests.Find(client.ns.Data.CurrentGuild(false), requesterGUID, requestID)
 end
+-- Accepted by a bank character, an officer or the guild master, if the
+-- bank character has enough to spare.
+H.check(not mike.ns.Requests.Accept(alice.guid, first), "a member cannot accept")
+H.check(not alice.ns.Requests.Accept(alice.guid, first), "nobody accepts their own request")
+H.check(olga.ns.Requests.Accept(alice.guid, first), "an officer accepts it")
+world:RunFor(150)
+local accepted = ViewAt(alice, alice.guid, first)
+H.check(accepted.state == "accepted" and accepted.accepter == olga.guid, "accepted for its requester, by the officer")
+H.eq(ViewAt(bank, alice.guid, first).state, "accepted", "and for the bank character")
+H.check(Printed(alice, "Olga Price accepted your request"), "the requester is told")
+H.check(not alice.ns.Requests.Delete(first), "its maker cannot delete an accepted request")
+H.check(not gus.ns.Requests.Accept(alice.guid, first), "nor is it accepted twice")
+H.eq(bank.ns.RequestList.WaitingForMe(), 1, "it still waits for the bank character")
+-- The bank character holds 40 cloth, 20 of them awaited by the accepted
+-- request: 20 to spare.
+local tooMany = Requests.Create(bank.guid, "item:" .. CLOTH, 25, "", IN_PERSON)
+world:RunFor(150)
+local spare, needed = olga.ns.Requests.Spare(olga.ns.Data.CurrentGuild(false), ViewAt(olga, alice.guid, tooMany))
+H.check(spare == 20 and needed == 25, ("to spare: what it holds, less what accepted requests await (%s of %s)"):format(tostring(spare),
+    tostring(needed)))
+local ok, why = olga.ns.Requests.Accept(alice.guid, tooMany)
+H.check(not ok and why == "stock", "more than it has to spare cannot be accepted")
+H.check(alice.ns.Requests.Delete(tooMany), "a pending request can be deleted")
+world:RunFor(150)
+-- Rejected, and deleted.
+local second = Requests.Create(bank.guid, "item:" .. HERB, 5, "", IN_PERSON)
+world:RunFor(150)
 H.eq(ViewAt(olga, alice.guid, second).request.d, IN_PERSON, "in person, for everyone")
 H.check(not mike.ns.Requests.Reject(alice.guid, second), "a member cannot reject")
 H.check(not alice.ns.Requests.Reject(alice.guid, second), "nobody rejects their own request")
@@ -174,7 +207,8 @@ world:RunFor(150)
 H.eq(ViewAt(alice, alice.guid, second).state, "rejected", "rejected for its requester")
 H.eq(ViewAt(bank, alice.guid, second).rejecter, olga.guid, "and for the bank, by the officer")
 H.check(Printed(alice, "Olga Price rejected your request"), "the requester is told")
-H.check(alice.ns.Requests.Delete(second), "a rejected request can be deleted")
+H.check(not olga.ns.Requests.Accept(alice.guid, second), "a rejected request cannot be accepted")
+H.check(alice.ns.Requests.Delete(second), "its maker can delete a rejected request")
 world:RunFor(150)
 H.eq(ViewAt(bank, alice.guid, second), nil, "deleted everywhere")
 local third = Requests.Create(bank.guid, "item:" .. ORE, 2, "", IN_PERSON)
@@ -182,50 +216,74 @@ world:RunFor(150)
 H.check(gus.ns.Requests.Reject(alice.guid, third), "the guild master rejects")
 world:RunFor(150)
 H.eq(ViewAt(alice, alice.guid, third).state, "rejected", "rejected by the guild master")
-Errors(world, "reject and delete")
+-- Accepted, then rejected: say the bank character can no longer deliver it.
+local fourth = Requests.Create(bank.guid, "item:" .. HERB, 2, "", IN_PERSON)
+world:RunFor(150)
+H.check(gus.ns.Requests.Accept(alice.guid, fourth), "the guild master accepts")
+world:RunFor(150)
+H.check(bank.ns.Requests.Reject(alice.guid, fourth), "an accepted request can still be rejected")
+world:RunFor(150)
+H.eq(ViewAt(alice, alice.guid, fourth).state, "rejected", "it is rejected")
+H.check(Printed(alice, "Bank Holder rejected your request"), "and its requester told")
+Errors(world, "accept, reject and delete")
 
 H.section("Requests: deliveries")
--- A trade of part of it: partial.
+-- A trade of part of it: still accepted, 10 delivered.
 world:Trade(bank, alice, { [1] = { CLOTH, 10 } }, {})
 world:RunFor(150)
-H.eq(ViewAt(alice, alice.guid, first).state, "partial", "half delivered by trade: partial")
-H.eq(ViewAt(olga, alice.guid, first).delivered, 10, "10 delivered, for everyone")
+H.check(ViewAt(alice, alice.guid, first).state == "accepted" and ViewAt(olga, alice.guid, first).delivered == 10,
+    "half delivered by trade: 10 delivered, for everyone")
 H.check(Printed(bank, "10 of 20 delivered to Alice Smith"), "the bank character is told")
 H.check(Printed(alice, "10 of 20 delivered for your request"), "and so is the requester")
--- The rest by mail: approved.
+-- The rest by mail: all delivered, the request goes once its maker is told.
+local firstKey = alice.ns.Requests.Key(alice.guid, first)
+local told = #alice.printed
 world:Mail(bank, "Alice Smith", { [1] = { CLOTH, 10 } })
 world:RunFor(150)
-H.eq(ViewAt(alice, alice.guid, first).state, "approved", "the rest by mail: approved")
-H.eq(ViewAt(mike, alice.guid, first).state, "approved", "approved for everyone")
-H.check(Printed(alice, "your request was delivered"), "the requester is told")
-H.check(not alice.ns.Requests.Delete(first), "an approved request cannot be deleted")
-H.check(not olga.ns.Requests.Reject(alice.guid, first), "nor rejected")
+H.check(Printed(alice, "your request was delivered", told), "the rest by mail: the requester is told it is delivered")
+H.check(ViewAt(alice, alice.guid, first) == nil and ViewAt(mike, alice.guid, first) == nil, "and the request goes, for everyone")
+world:RunFor(150)
+H.eq(bank.ns.Data.GetOwnRecord(false).ra[firstKey], nil, "and so does the bank character's answer to it")
+H.eq(olga.ns.Data.GetOwnRecord(false).ac[firstKey], nil, "and the officer's acceptance")
+H.check(not alice.ns.Requests.CanDelete({ requester = alice.guid, state = "approved" }), "a delivered request cannot be deleted")
+H.check(not olga.ns.Requests.CanReject({ requester = alice.guid, state = "approved" }), "nor rejected")
 H.eq(bank.ns.RequestList.WaitingForMe(), 0, "nothing waits for the bank any more")
--- A rejected request delivered anyway is approved.
+-- A rejected request delivered anyway is delivered too.
+told = #alice.printed
 world:Trade(bank, alice, { [1] = { ORE, 2 } }, {})
 world:RunFor(150)
-H.eq(ViewAt(alice, alice.guid, third).state, "approved", "a rejected request delivered anyway is approved")
+H.check(Printed(alice, "your request was delivered", told) and ViewAt(alice, alice.guid, third) == nil,
+    "a rejected request delivered anyway is delivered, and goes")
 Errors(world, "deliveries")
 
-H.section("Requests: deliveries count oldest first, and only from a bank")
+H.section("Requests: which a delivery counts towards")
 local older = Requests.Create(bank.guid, "item:" .. HERB, 3, "", IN_PERSON)
 world:RunFor(5)
 local newer = Requests.Create(bank.guid, "item:" .. HERB, 4, "", IN_PERSON)
 world:RunFor(150)
+H.check(olga.ns.Requests.Accept(alice.guid, newer), "(the newer one accepted)")
+world:RunFor(150)
 world:Mail(bank, "Alice Smith", { [1] = { HERB, 5 } })
 world:RunFor(150)
-H.eq(ViewAt(alice, alice.guid, older).state, "approved", "the older request is served first")
-H.eq(ViewAt(alice, alice.guid, newer).delivered, 2, "the rest goes to the newer one")
+H.eq(ViewAt(alice, alice.guid, newer), nil, "the accepted request first, though newer: delivered, it goes")
+H.eq(ViewAt(alice, alice.guid, older).delivered, 1, "the rest to the one not accepted")
+H.eq(ViewAt(alice, alice.guid, fourth).delivered, 0, "none to the rejected one")
+local newest = Requests.Create(bank.guid, "item:" .. HERB, 3, "", IN_PERSON)
+world:RunFor(150)
+world:Mail(bank, "Alice Smith", { [1] = { HERB, 2 } })
+world:RunFor(150)
+H.check(ViewAt(alice, alice.guid, older) == nil and ViewAt(alice, alice.guid, newest).delivered == 0,
+    "among those not accepted, the oldest first")
 world:Trade(mike, alice, { [1] = { HERB, 2 } }, {})
 world:RunFor(150)
-H.eq(ViewAt(alice, alice.guid, newer).delivered, 2, "a member who is not a bank character delivers nothing")
+H.eq(ViewAt(alice, alice.guid, newest).delivered, 0, "a member who is not a bank character delivers nothing")
 world:Trade(bank, alice, { [1] = { HERB, 2 } }, {}, { cancel = true })
 world:RunFor(150)
-H.eq(ViewAt(alice, alice.guid, newer).delivered, 2, "a cancelled trade delivers nothing")
+H.eq(ViewAt(alice, alice.guid, newest).delivered, 0, "a cancelled trade delivers nothing")
 world:Mail(bank, "Alice Smith", { [1] = { HERB, 2 } }, { fail = true })
 world:RunFor(150)
-H.eq(ViewAt(alice, alice.guid, newer).delivered, 2, "a mail the game refuses delivers nothing")
-Errors(world, "oldest first")
+H.eq(ViewAt(alice, alice.guid, newest).delivered, 0, "a mail the game refuses delivers nothing")
+Errors(world, "which first")
 
 H.section("Requests: limits")
 local made = 0
@@ -243,22 +301,43 @@ H.eq(count, alice.ns.Pack.LIMITS.requests, "no more requests than the limit")
 local _, full = alice.ns.Requests.Create(bank.guid, "item:" .. CLOTH, 1, "", IN_PERSON)
 H.eq(full, "full", "and it says so")
 for requestID, request in pairs(own.rq) do
-    if request.i == CLOTH and requestID ~= first then
+    if request.i == CLOTH then
         alice.ns.Requests.Delete(requestID)
     end
 end
 world:RunFor(150)
 Errors(world, "limits")
 
-H.section("Requests: closed ones are dropped after a week")
-local beforeKey = alice.ns.Requests.Key(alice.guid, first)
-H.check(bank.ns.Data.GetOwnRecord(false).ra[beforeKey] ~= nil, "the bank's answer is there")
-world.base = world.base + 8 * 86400
+H.section("Requests: a rejected one goes after a week")
+local fourthKey = alice.ns.Requests.Key(alice.guid, fourth)
+-- Mike's request, rejected; then Mike no longer logs in.
+local mikes = mike.ns.Requests.Create(bank.guid, "item:" .. ORE, 1, "", IN_PERSON)
+world:RunFor(150)
+H.check(olga.ns.Requests.Reject(mike.guid, mikes), "(another member's request rejected)")
+world:RunFor(150)
+local mikesKey = mike.ns.Requests.Key(mike.guid, mikes)
+world:Logout(mike)
+world.base = world.base + 6 * 86400
 world:FireEvent(alice, "GUILD_ROSTER_UPDATE", false)
 world:RunFor(200)
-H.eq(alice.ns.Data.GetOwnRecord(false).rq[first], nil, "an approved request is dropped after a week")
+H.eq(ViewAt(alice, alice.guid, fourth).state, "rejected", "six days later, a rejected request is still there")
+world.base = world.base + 2 * 86400
+world:FireEvent(alice, "GUILD_ROSTER_UPDATE", false)
 world:RunFor(200)
-H.eq(bank.ns.Data.GetOwnRecord(false).ra[beforeKey], nil, "and then the answer to it")
+H.eq(alice.ns.Data.GetOwnRecord(false).rq[fourth], nil, "after a week, its maker's addon drops it")
+world:RunFor(200)
+H.eq(bank.ns.Data.GetOwnRecord(false).ra[fourthKey], nil, "then the answer to it goes")
+H.eq(gus.ns.Data.GetOwnRecord(false).ac[fourthKey], nil, "and the acceptance")
+-- Mike's, though still in his record, is no longer listed; the answer that
+-- rejected it stays, so it does not come back pending.
+H.check(olga.ns.Data.CurrentGuild(false).members[mike.guid].rq[mikes] ~= nil, "(a member who no longer logs in keeps it in their record)")
+H.eq(ViewAt(olga, mike.guid, mikes), nil, "but it is no longer listed")
+H.check(olga.ns.Data.GetOwnRecord(false).ra[mikesKey] ~= nil, "and the answer that rejected it stays, so it does not come back pending")
+world:Login(mike)
+world:RunFor(200)
+H.eq(mike.ns.Data.GetOwnRecord(false).rq[mikes], nil, "back in the game, their addon drops it")
+world:RunFor(200)
+H.eq(olga.ns.Data.GetOwnRecord(false).ra[mikesKey], nil, "and then the answer to it goes")
 Errors(world, "pruning")
 
 H.section("Bank: a bank character who loses the rank")
@@ -306,11 +385,17 @@ local sample = {
            [8] = { b = bank.guid, i = 8, q = 1, c = now, nt = "", d = 2 } },
     ra = { [alice.guid .. ":7"] = { s = 2, n = 3, u = now } },
     gb = { m = 123456, t = now },
+    ac = { [alice.guid .. ":8"] = now - 5 },
 }
 local _, back = ns.Pack.ReadRecord(ns.Pack.Reader(ns.Pack.RecordString(alice.guid, sample)))
 H.check(ns.Same(back.bk, sample.bk), "bank data round trip, slot by slot")
 H.check(ns.Same(back.rq, sample.rq), "requests round trip, with how they are to be delivered")
 H.check(ns.Same(back.ra, sample.ra), "answers round trip")
+H.check(ns.Same(back.ac, sample.ac), "accepted requests round trip")
+local noneAccepted = H.DeepCopy(sample)
+noneAccepted.ac = {}
+_, back = ns.Pack.ReadRecord(ns.Pack.Reader(ns.Pack.RecordString(alice.guid, noneAccepted)))
+H.check(back.ac ~= nil and next(back.ac) == nil, "none accepted is told apart from unknown")
 H.check(ns.Same(back.gb, sample.gb), "the guild bank's money round trip")
 local empty = { t = now, rq = {}, ra = {} }
 _, back = ns.Pack.ReadRecord(ns.Pack.Reader(ns.Pack.RecordString(alice.guid, empty)))
@@ -325,6 +410,8 @@ H.check(Bad(function(r) r.rq[7].q = 0 end), "a request for 0 is refused")
 H.check(Bad(function(r) r.rq[7].b = "nobody" end), "a request to a bad GUID is refused")
 H.check(Bad(function(r) r.ra["bad key"] = { s = 1, u = now } end), "an answer with a bad key is refused")
 H.check(Bad(function(r) r.ra[alice.guid .. ":7"].s = 9 end), "an answer of an unknown kind is refused")
+H.check(Bad(function(r) r.ac["bad key"] = now end), "an acceptance with a bad key is refused")
+H.check(Bad(function(r) r.ac[alice.guid .. ":8"] = "now" end), "an acceptance without a time is refused")
 H.check(Bad(function(r) r.bk.b[1].s[1].s = "|Hitem:1|h" end), "an item string with escapes is refused")
 H.check(Bad(function(r) r.bk.b[1].s[17] = { i = 1, n = 1 } end), "an item past a container's last slot is refused")
 H.check(Bad(function(r) r.bk.b[2].bi = "|Hitem:1|h" end), "a bag with escapes is refused")
@@ -487,6 +574,41 @@ for _, case in ipairs({ { 5, 536, 258 }, { 6, 536, 288 }, { 11, 536, 288 }, { 14
     end
     H.check(fits and best, ("%d columns in %dx%d: %d across, %d rows, scale %.2f, the best that fits"):format(count, width, height, across, rows, scale))
 end
+across, rows, scale = Fit(0, 536, 288)
+H.check(rows == 0 and scale > 0, "no columns: nothing to fit, at a scale the game takes")
+-- A character just given the bank's rank, whose client has not shared what
+-- it holds yet: listed greyed out, its tooltip saying why; the view keeps
+-- the bank character it knows.
+local _, newGuid = world:AddMember("Zoe Newbank", nil, { rank = "Banco", rankIndex = 4 })
+world:RosterChanged()
+world:RunFor(2)
+alice.ns.GuildTab.Refresh()
+local menu = view.Dropdown._menu
+H.check(#menu == 2 and menu[1].text == "Bank Holder" and menu[1].enabled == nil and menu[2].text == "Zoe Newbank",
+    "a new bank character is listed")
+H.check(menu[2].enabled == false and menu[2].tooltipTitle == "Zoe Newbank"
+    and menu[2].tooltip == "Zoe Newbank has not shared what it holds yet: log in with it with this addon.", "greyed out, saying why")
+menu[2].setSelected(menu[2].data)
+Errors(world, "a bank character not known yet, chosen")
+H.check(view.Dropdown._text == "Bank Holder" and view.layout.columns == 7, "the view keeps the one it knows")
+-- With no bank character known, the one not known shows, saying so.
+local guildData = alice.ns.Data.CurrentGuild(false)
+local known = guildData.members[bank.guid]
+guildData.members[bank.guid] = nil
+alice.ns.BankView.Refresh(view)
+H.check(view.Empty:IsShown() and view.Empty:GetText():find("has not shared what it holds yet", 1, true)
+    and view.layout.columns == 0 and view.Canvas._scale > 0, "with none known: why nothing shows")
+guildData.members[bank.guid] = known
+for index, member in ipairs(world.roster) do
+    if member.guid == newGuid then
+        table.remove(world.roster, index)
+    end
+end
+world:RosterChanged()
+world:RunFor(2)
+alice.ns.BankView.Refresh(view)
+H.check(#view.Dropdown._menu == 1 and view.Dropdown._text == "Bank Holder" and view.layout.columns == 7, "back as it was")
+Errors(world, "a bank character not known yet")
 -- The search dims what does not match, as the game's does.
 view.Search:SetText("12345")
 view.Search._scripts.OnTextChanged(view.Search)
@@ -552,6 +674,25 @@ local bankSlot = bankPage.Bank.Columns[1].Slots[1]
 bankSlot._scripts.OnClick(bankSlot, "RightButton")
 H.check(bankEnv.GuildBankAltsRequestForm == nil or not bankEnv.GuildBankAltsRequestForm:IsShown(), "a bank character cannot request from itself")
 H.check(bankEnv.GuildBankAltsGuildTab.Badge:IsShown(), "the bank character's tab shows the notification mark")
+H.check(MicroMark(bank):IsShown(), "so does the micro menu's button that opens the guild window")
+H.check(not MicroMark(alice):IsShown(), "(not the requester's)")
+local badge = bankEnv.GuildBankAltsGuildTab.Badge
+H.check(badge._type == "Frame" and badge._parent == bankEnv.GuildBankAltsGuildTab and badge.Icon ~= nil,
+    "on a frame of its own over the tab, which the tab's selection glow does not cover")
+local requestsTab = bankPage.SubTabs.Tabs[2]
+H.check(requestsTab.Mark:IsShown() and not bankPage.SubTabs.Tabs[1].Mark, "so does its Requests subtab")
+H.check(requestsTab.Mark._point[2] == requestsTab.Middle and requestsTab.Mark._point[3] == "TOPRIGHT",
+    "on the corner of its art, lower than its frame's top")
+requestsTab._scripts.OnClick(requestsTab)
+H.check(requestsTab.Mark:IsShown() and requestsTab.Mark._point[2] == requestsTab.MiddleActive,
+    "selected, on the corner of its taller art")
+local waitingElement = Find(bankPage.Requests.ScrollBox._provider.elements, function(e) return e.view.key == mine.key end)
+local waitingRow = H.NewObject(bank, "Frame")
+bankPage.Requests.ScrollBox._view.init(waitingRow, waitingElement)
+H.check(waitingRow.Mark:IsShown() and waitingRow.Mark._parent == waitingRow.Item, "and the row of the request waiting for it, on its icon")
+H.check(waitingRow.Accept:IsShown() and waitingRow.Accept:IsEnabled() and not waitingRow.Prepare:IsShown()
+    and not waitingRow.Mail:IsShown(), "not accepted yet: Accept, and no Prepare nor Mail")
+bankPage.SubTabs.Tabs[1]._scripts.OnClick(bankPage.SubTabs.Tabs[1])
 Errors(world, "bank subtab")
 
 H.section("The Requests subtab")
@@ -564,6 +705,7 @@ local requestRow = H.NewObject(alice, "Frame")
 page.Requests.ScrollBox._view.init(requestRow, mineElement)
 H.check(requestRow.Button:IsShown() and requestRow.Button:GetText() == "Delete", "our own pending request has Delete")
 H.check(requestRow.Detail:GetText():find(" · By mail · \"Thanks\"", 1, true) ~= nil, "the row tells how it is to be delivered")
+H.check(not requestRow.Mark:IsShown(), "our own request, waiting for the bank character, has no mark for us")
 local olgaEnv = olga.env
 olgaEnv.GuildBankAltsGuildTab._scripts.OnClick(olgaEnv.GuildBankAltsGuildTab)
 local olgaPage = olgaEnv.GuildBankAltsGuildPanel
@@ -572,8 +714,31 @@ local olgaElement = Find(olgaPage.Requests.ScrollBox._provider.elements, functio
 local olgaRow = H.NewObject(olga, "Frame")
 olgaPage.Requests.ScrollBox._view.init(olgaRow, olgaElement)
 H.check(olgaRow.Button:IsShown() and olgaRow.Button:GetText() == "Reject", "an officer sees Reject")
+H.check(olgaRow.Accept:IsShown() and olgaRow.Accept:GetText() == "Accept" and olgaRow.Accept:IsEnabled()
+    and olgaRow.Accept._point[4] < olgaRow.Button._point[4], "and Accept, left of it")
+-- More than the bank character has: Accept is off, and says why.
+local swords = ns.Requests.Create(bank.guid, "item:" .. SWORD, 5, "", ns.Requests.IN_PERSON)
+world:RunFor(150)
+olgaPage.SubTabs.Tabs[2]._scripts.OnClick(olgaPage.SubTabs.Tabs[2])
+local swordElement = Find(olgaPage.Requests.ScrollBox._provider.elements, function(e)
+    return e.view.key == ns.Requests.Key(alice.guid, swords)
+end)
+local swordRow = H.NewObject(olga, "Frame")
+olgaPage.Requests.ScrollBox._view.init(swordRow, swordElement)
+H.check(swordRow.Accept:IsShown() and not swordRow.Accept:IsEnabled(), "more than the bank character has: Accept is off")
+swordRow.Accept._scripts.OnEnter(swordRow.Accept)
+H.eq(olgaEnv.GameTooltip._lines and olgaEnv.GameTooltip._lines[1],
+    "Not enough in the bank: 1 to spare, 5 asked. What other accepted requests still await is set aside.", "and says why")
+H.check(ns.Requests.Delete(swords), "(deleted)")
+world:RunFor(150)
+olgaRow.Accept._scripts.OnClick(olgaRow.Accept)
+H.eq(ViewAt(olga, alice.guid, mine.id).state, "accepted", "Accept accepts it")
+olgaPage.Requests.ScrollBox._view.init(olgaRow, Find(olgaPage.Requests.ScrollBox._provider.elements, function(e)
+    return e.view.key == mine.key
+end))
+H.check(olgaRow.Button:GetText() == "Reject" and not olgaRow.Accept:IsShown(), "accepted, it can still be rejected")
 olgaRow.Button._scripts.OnClick(olgaRow.Button)
-H.eq(ViewAt(olga, alice.guid, mine.id).state, "rejected", "and rejects with it")
+H.eq(ViewAt(olga, alice.guid, mine.id).state, "rejected", "and Reject rejects it")
 local mikeEnv = mike.env
 mikeEnv.GuildBankAltsGuildTab._scripts.OnClick(mikeEnv.GuildBankAltsGuildTab)
 local mikePage = mikeEnv.GuildBankAltsGuildPanel
@@ -590,39 +755,237 @@ H.check(Find(page.Requests.ScrollBox._provider.elements, function(e) return ns.R
     "Only open requests hides the closed ones")
 Errors(world, "requests subtab")
 
-H.section("A rejected request's notice")
--- The requester looks at the Bank subtab while an officer rejects a
--- request of hers.
+H.section("Notices of answered requests")
 local function RequestsLabel()
     return page.SubTabs.Tabs[2]:GetText()
 end
+local function Marks()
+    return tab.Badge:IsShown() and page.SubTabs.Tabs[2].Mark:IsShown() and MicroMark(alice):IsShown()
+end
+-- The row of a request: true or false, its mark; nil, not listed.
+local function Marked(id)
+    local element = Find(page.Requests.ScrollBox._provider.elements, function(e)
+        return e.view.key == ns.Requests.Key(alice.guid, id)
+    end)
+    if not element then
+        return nil
+    end
+    local row = H.NewObject(alice, "Frame")
+    page.Requests.ScrollBox._view.init(row, element)
+    return row.Mark:IsShown()
+end
+-- The row of a request, as the list shows it now.
+local function RowOf(id)
+    local element = Find(page.Requests.ScrollBox._provider.elements, function(e)
+        return e.view.key == ns.Requests.Key(alice.guid, id)
+    end)
+    local row = H.NewObject(alice, "Frame")
+    page.Requests.ScrollBox._view.init(row, element)
+    return row
+end
 world:RunFor(150)
+-- Our request rejected in the Requests subtab section: told until we
+-- delete it, looked at or not.
 page.SubTabs.Tabs[1]._scripts.OnClick(page.SubTabs.Tabs[1])
-H.check(RequestsLabel() == "Requests" and not tab.Badge:IsShown(), "nothing to tell the requester yet")
-local turnedDown = ns.Requests.Create(bank.guid, "item:2589", 3, "", ns.Requests.IN_PERSON)
-world:RunFor(150)
-local printed = #alice.printed
-H.check(olga.ns.Requests.Reject(alice.guid, turnedDown), "an officer rejects it")
-world:RunFor(150)
-H.eq(RequestsLabel(), "Requests (1)", "the requester's Requests subtab counts it")
-H.check(tab.Badge:IsShown(), "and the guild tab shows the notification mark")
-H.check(Printed(alice, "rejected your request", printed), "besides the chat line")
--- Seen only with the rejected requests listed: not while only open ones are.
-H.check(page.OnlyOpen:GetChecked(), "(only open requests listed)")
+H.check(RequestsLabel() == "Requests (1)" and Marks(), "a rejected request is counted, with the marks on the tab and subtab")
 page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
-H.check(RequestsLabel() == "Requests (1)" and tab.Badge:IsShown(), "with only open requests listed, it is still to be seen")
 page.OnlyOpen:SetChecked(false)
 page.OnlyOpen._scripts.OnClick(page.OnlyOpen)
-H.check(RequestsLabel() == "Requests" and not tab.Badge:IsShown(), "listed, it is seen: the count and the mark go away")
+H.eq(Marked(mine.id), true, "and on its row")
+H.check(RowOf(mine.id).Tints.rejected:IsShown() and not RowOf(mine.id).Tints.accepted:IsShown(), "a rejected request's row is red")
+page.SubTabs.Tabs[1]._scripts.OnClick(page.SubTabs.Tabs[1])
+page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
+H.check(RequestsLabel() == "Requests (1)" and Marks() and Marked(mine.id), "seen, it is still told")
+H.check(ns.Requests.Delete(mine.id), "until it is deleted")
 world:RunFor(150)
-H.check(RequestsLabel() == "Requests" and not tab.Badge:IsShown(), "and stay away")
--- Rejected while the requester looks at the list: seen at once.
-local seenAtOnce = ns.Requests.Create(bank.guid, "item:2589", 2, "", ns.Requests.IN_PERSON)
+H.check(RequestsLabel() == "Requests" and not tab.Badge:IsShown() and not page.SubTabs.Tabs[2].Mark:IsShown()
+    and not MicroMark(alice):IsShown() and Marked(mine.id) == nil, "then the count and the marks go")
+-- Accepted: told until its maker points at its row.
+local acceptedNow = ns.Requests.Create(bank.guid, "item:2589", 3, "", ns.Requests.IN_PERSON)
 world:RunFor(150)
-olga.ns.Requests.Reject(alice.guid, seenAtOnce)
+H.check(olga.ns.Requests.Accept(alice.guid, acceptedNow), "an officer accepts a request")
 world:RunFor(150)
-H.check(RequestsLabel() == "Requests" and not tab.Badge:IsShown(), "rejected while the list shows, there is nothing more to tell")
-Errors(world, "rejected notice")
+H.check(RequestsLabel() == "Requests (1)" and Marks() and Marked(acceptedNow), "it is told, on its row too")
+H.check(RowOf(acceptedNow).Tints.accepted:IsShown() and not RowOf(acceptedNow).Tints.rejected:IsShown(),
+    "an accepted request's row is green")
+H.check(not RowOf(newest).Tints.accepted:IsShown() and not RowOf(newest).Tints.rejected:IsShown(), "a pending one's has no tint")
+world:Trade(bank, alice, { [1] = { CLOTH, 1 } }, {})
+world:RunFor(150)
+H.check(RequestsLabel() == "Requests (1)" and Marks() and Marked(acceptedNow), "partly delivered, still told")
+local acceptedRow = RowOf(acceptedNow)
+acceptedRow._scripts.OnEnter(acceptedRow)
+H.check(not acceptedRow.Mark:IsShown() and RequestsLabel() == "Requests" and not tab.Badge:IsShown()
+    and not page.SubTabs.Tabs[2].Mark:IsShown(), "pointed at, its notice is seen: its mark, the count and the tabs' marks go")
+H.check(env.GameTooltip:IsShown(), "(its tooltip shows)")
+world:RunFor(150)
+H.check(Marked(acceptedNow) == false and RowOf(acceptedNow).Tints.accepted:IsShown() and RequestsLabel() == "Requests",
+    "it stays listed, accepted, its notice seen")
+-- Another, seen by pointing at its item's icon.
+local another = ns.Requests.Create(bank.guid, "item:2589", 1, "", ns.Requests.IN_PERSON)
+world:RunFor(150)
+H.check(olga.ns.Requests.Accept(alice.guid, another), "(another accepted)")
+world:RunFor(150)
+H.check(RequestsLabel() == "Requests (1)" and Marked(another), "told")
+local anotherRow = RowOf(another)
+anotherRow.Item._scripts.OnEnter(anotherRow.Item)
+H.check(not anotherRow.Mark:IsShown() and RequestsLabel() == "Requests", "pointing at its item seen it too")
+-- Pointing at someone else's or a rejected request changes nothing.
+H.check(not ns.Data.OwnState().acceptedSeen[ns.Requests.Key(alice.guid, newest)], "(only accepted ones are noted)")
+world:Trade(bank, alice, { [1] = { CLOTH, 3 } }, {})
+world:RunFor(150)
+H.check(Marked(acceptedNow) == nil and Marked(another) == nil and RequestsLabel() == "Requests",
+    "all delivered, they go")
+H.check(next(ns.Data.OwnState().acceptedSeen) == nil, "and what was seen of them is forgotten")
+Errors(world, "answered notices")
+
+H.section("The request form: what accepted requests set aside")
+do
+    page.SubTabs.Tabs[1]._scripts.OnClick(page.SubTabs.Tabs[1])
+    world:RunFor(1)
+    local function ClothSlot()
+        for _, column in ipairs(page.Bank.Columns) do
+            for _, s in ipairs(column.Slots) do
+                if s.item and s.item.i == CLOTH then
+                    return s
+                end
+            end
+        end
+    end
+    local function Ask()
+        local s = ClothSlot()
+        s._scripts.OnClick(s, "RightButton")
+        return form.Available:GetText()
+    end
+    local held = ns.BankView.Holding(ns.Data.CurrentGuild(false).members[bank.guid].bk, CLOTH)
+    H.check(held > 4, "(the bank holds some cloth: " .. held .. ")")
+    H.eq(Ask(), ("of %d"):format(held), "with no request accepted, all the bank holds may be asked for")
+    form.Cancel._scripts.OnClick(form.Cancel)
+    -- Mike's request for 3 accepted: set aside.
+    local mikes = mike.ns.Requests.Create(bank.guid, "item:" .. CLOTH, 3, "", Requests.IN_PERSON)
+    world:RunFor(150)
+    H.check(olga.ns.Requests.Accept(mike.guid, mikes), "(Mike's request for 3 accepted)")
+    world:RunFor(150)
+    H.eq(Ask(), ("of %d available (3 set aside for accepted requests)"):format(held - 3),
+        "an accepted request's items are set aside: the text says so")
+    H.eq(form.Error:GetText(), "", "(no error yet)")
+    form.Quantity:SetText(tostring(held - 2))
+    form.Submit._scripts.OnClick(form.Submit)
+    H.eq(form.Error:GetText(), ("Only %d can be requested: the bank holds %d, 3 of them set aside for accepted requests."):format(held - 3, held),
+        "asking for more than is left is refused, saying why")
+    H.check(form:IsShown(), "(the form stays open)")
+    form.Quantity:SetText(tostring(held - 3))
+    form.Submit._scripts.OnClick(form.Submit)
+    H.check(not form:IsShown(), "what is left may be asked for")
+    world:RunFor(150)
+    local rest = Find(Requests.List(ns.Data.CurrentGuild(false)), function(v)
+        return v.requester == alice.guid and v.request.i == CLOTH and v.request.q == held - 3
+    end)
+    H.check(rest ~= nil and rest.state == "pending", "(made, pending)")
+    H.eq(Ask(), ("of %d available (3 set aside for accepted requests)"):format(held - 3), "a pending request sets nothing aside")
+    form.Cancel._scripts.OnClick(form.Cancel)
+    -- Accepted too: nothing is left.
+    H.check(olga.ns.Requests.Accept(alice.guid, rest.id), "(that one accepted as well)")
+    world:RunFor(150)
+    H.eq(Ask(), ("of 0 available (%d set aside for accepted requests)"):format(held), "all set aside")
+    H.eq(form.Error:GetText(), ("None can be requested: all %d the bank holds are set aside for accepted requests."):format(held),
+        "the form says at once that none can be asked for")
+    form.Submit._scripts.OnClick(form.Submit)
+    H.check(form:IsShown(), "and asks for none")
+    form.Cancel._scripts.OnClick(form.Cancel)
+    -- Partly delivered, an accepted request sets aside only what it still awaits.
+    world:Trade(bank, mike, { [1] = { CLOTH, 2 } }, {})
+    world:RunFor(150)
+    local now = ns.BankView.Holding(ns.Data.CurrentGuild(false).members[bank.guid].bk, CLOTH)
+    H.eq(Ask(), ("of %d available (%d set aside for accepted requests)"):format(math.max(now - (held - 2), 0), math.min(held - 2, now)),
+        "partly delivered, only what it still awaits stays set aside")
+    form.Cancel._scripts.OnClick(form.Cancel)
+    -- As it was: both rejected, Alice's deleted.
+    H.check(olga.ns.Requests.Reject(mike.guid, mikes) and olga.ns.Requests.Reject(alice.guid, rest.id), "(both rejected)")
+    world:RunFor(150)
+    H.check(Requests.Delete(rest.id), "(Alice's deleted)")
+    world:RunFor(150)
+    H.eq(Ask(), ("of %d"):format(now), "rejected, they set nothing aside")
+    form.Cancel._scripts.OnClick(form.Cancel)
+end
+Errors(world, "form and accepted requests")
+
+H.section("The Requests subtab: buttons for several requests at once")
+do
+    local guild = ns.Data.CurrentGuild(false)
+    local held = ns.BankView.Holding(guild.members[bank.guid].bk, CLOTH)
+    -- Mike's request for 2, accepted, sets 2 aside; Alice asks for more
+    -- than is left twice, and for 1; Mike for more than the bank holds.
+    local mikeAccepted = mike.ns.Requests.Create(bank.guid, "item:" .. CLOTH, 2, "", Requests.IN_PERSON)
+    local aliceBig = Requests.Create(bank.guid, "item:" .. CLOTH, held + 5, "", Requests.IN_PERSON)
+    local aliceMid = Requests.Create(bank.guid, "item:" .. CLOTH, held - 1, "", Requests.IN_PERSON)
+    local aliceSmall = Requests.Create(bank.guid, "item:" .. CLOTH, 1, "", Requests.IN_PERSON)
+    local mikeBig = mike.ns.Requests.Create(bank.guid, "item:" .. CLOTH, held + 1, "", Requests.IN_PERSON)
+    world:RunFor(150)
+    H.check(olga.ns.Requests.Accept(mike.guid, mikeAccepted), "(Mike's request for 2 accepted)")
+    world:RunFor(150)
+    local short = {}
+    for _, view in ipairs(olga.ns.Requests.Short(olga.ns.Data.CurrentGuild(false))) do
+        short[#short + 1] = view.key
+    end
+    H.eq(table.concat(short, " "), table.concat({ Requests.Key(alice.guid, aliceBig), Requests.Key(alice.guid, aliceMid),
+        Requests.Key(mike.guid, mikeBig) }, " "),
+        "short of stock: those asking for more than the bank holds less what accepted requests await, oldest first")
+    -- A member: Delete my rejected, not Reject short of stock.
+    page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
+    H.check(page.DeleteRejected:IsShown() and not page.RejectShort:IsShown(), "a member has Delete my rejected only")
+    local rejectedBefore = #Requests.OwnRejected(ns.Data.CurrentGuild(false))
+    -- An officer: Reject short of stock, on.
+    olgaPage.SubTabs.Tabs[2]._scripts.OnClick(olgaPage.SubTabs.Tabs[2])
+    local rejectShort = olgaPage.RejectShort
+    H.check(rejectShort:IsShown() and rejectShort:IsEnabled() and rejectShort:GetText() == "Reject short of stock",
+        "an officer has Reject short of stock, on")
+    rejectShort._scripts.OnEnter(rejectShort)
+    local tip = table.concat(olgaEnv.GameTooltip._lines, "\n")
+    H.check(olgaEnv.GameTooltip._lines[2] == "Rejects the requests that cannot be met because the bank does not hold enough for them."
+        and #olgaEnv.GameTooltip._lines == 5 and select(2, tip:gsub("Alice Smith", "")) == 2 and tip:find("Mike Stone", 1, true),
+        "its tooltip says in a line what it does, and lists them: " .. tip)
+    rejectShort._scripts.OnClick(rejectShort)
+    H.check(olga.confirm and olga.confirm.text_arg1 == "Reject the requests short of stock (3)? Their makers are told.",
+        "it asks first")
+    H.check(ViewAt(olga, alice.guid, aliceBig).state == "pending", "(nothing rejected until confirmed)")
+    local printed = #olga.printed
+    olga.confirm.callback()
+    H.check(Printed(olga, "Requests short of stock rejected: 3.", printed), "confirmed, it rejects them, and says so")
+    world:RunFor(150)
+    H.check(ViewAt(alice, alice.guid, aliceBig).state == "rejected" and ViewAt(alice, alice.guid, aliceMid).state == "rejected"
+        and ViewAt(alice, mike.guid, mikeBig).state == "rejected", "the three are rejected, for everyone")
+    H.check(ViewAt(alice, alice.guid, aliceSmall).state == "pending" and ViewAt(alice, mike.guid, mikeAccepted).state == "accepted",
+        "the others stay as they were")
+    olgaPage.SubTabs.Tabs[2]._scripts.OnClick(olgaPage.SubTabs.Tabs[2])
+    H.check(olgaPage.RejectShort:IsShown() and not olgaPage.RejectShort:IsEnabled(), "none left: the button is off")
+    olgaPage.RejectShort._scripts.OnEnter(olgaPage.RejectShort)
+    H.eq(olgaEnv.GameTooltip._lines[2], "No request is short of stock.", "and says why")
+    -- A bank character has it too.
+    local bankRequests = bankEnv.GuildBankAltsGuildPanel
+    bankRequests.SubTabs.Tabs[2]._scripts.OnClick(bankRequests.SubTabs.Tabs[2])
+    H.check(bankRequests.RejectShort:IsShown(), "a bank character has Reject short of stock too")
+    -- Alice deletes her rejected requests at once.
+    page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
+    local deleteRejected = page.DeleteRejected
+    H.check(deleteRejected:IsEnabled(), "with rejected requests, Delete my rejected is on")
+    deleteRejected._scripts.OnEnter(deleteRejected)
+    H.eq(env.GameTooltip._lines[2], ("Deletes your rejected requests (%d)."):format(rejectedBefore + 2), "its tooltip says how many")
+    printed = #alice.printed
+    deleteRejected._scripts.OnClick(deleteRejected)
+    H.check(Printed(alice, ("Rejected requests deleted: %d."):format(rejectedBefore + 2), printed), "it deletes them, and says so")
+    world:RunFor(150)
+    H.check(ViewAt(olga, alice.guid, aliceBig) == nil and ViewAt(olga, alice.guid, aliceMid) == nil
+        and ViewAt(olga, alice.guid, aliceSmall).state == "pending" and ViewAt(olga, mike.guid, mikeBig).state == "rejected",
+        "only hers rejected go, for everyone")
+    page.SubTabs.Tabs[2]._scripts.OnClick(page.SubTabs.Tabs[2])
+    H.check(not page.DeleteRejected:IsEnabled(), "none left: the button is off")
+    page.DeleteRejected._scripts.OnEnter(page.DeleteRejected)
+    H.eq(env.GameTooltip._lines[2], "You have no rejected requests.", "and says why")
+    -- As it was.
+    H.check(Requests.Delete(aliceSmall) and olga.ns.Requests.Reject(mike.guid, mikeAccepted), "(cleaned up)")
+    world:RunFor(150)
+end
+Errors(world, "buttons for several requests")
 
 H.section("The Send items button")
 -- The game's mailbox: closed, with its Send tab and recipient box.

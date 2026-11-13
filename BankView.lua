@@ -193,6 +193,10 @@ end
 -- give the largest scale (never above 1) with every column shown. Returns
 -- the columns across, the rows, and the scale.
 function BankView.Fit(columns, width, height)
+    if columns < 1 then
+        -- Nothing to show (a bank character whose slots are not known yet).
+        return 1, 0, 1
+    end
     local best, bestAcross, bestRows = -1, 1, columns
     for across = math.max(columns, 1), 1, -1 do
         local rows = math.ceil(columns / across)
@@ -243,7 +247,8 @@ local function SlotOnClick(slot, mouseButton)
     local itemString = ItemString(item)
     if mouseButton == "RightButton" then
         if owner.guid ~= ns.playerGUID then
-            ns.RequestForm.Open(owner.guid, itemString, BankView.Holding(owner.bank, item.i))
+            ns.RequestForm.Open(owner.guid, itemString, BankView.Holding(owner.bank, item.i),
+                ns.Requests.Reserved(ns.Data.CurrentGuild(false), owner.guid, item.i))
         end
     elseif IsModifiedClick("CHATLINK") then
         local _, link = BankView.ItemInfo(itemString)
@@ -540,16 +545,40 @@ end
 
 -- The view ----------------------------------------------------------------------------
 
+-- Every bank character to choose from; one that has not shared what it
+-- holds yet is greyed out, its tooltip saying so.
 local function SetupDropdown(dropdown, root)
     local view = dropdown.view
     for _, entry in ipairs(view.banks or {}) do
-        root:CreateRadio(entry.name, function(guid)
+        local radio = root:CreateRadio(entry.name, function(guid)
             return guid == selectedBank
         end, function(guid)
             selectedBank = guid
             BankView.Refresh(view)
         end, entry.guid)
+        if not entry.bank then
+            radio:SetEnabled(false)
+            radio:SetTitleAndTextTooltip(entry.name, L["%s has not shared what it holds yet: log in with it with this addon."]:format(entry.name))
+        end
     end
+end
+
+-- The bank character to show: the one chosen, if what it holds is known;
+-- else the first whose is; else the one chosen, or the first.
+local function Shown(banks)
+    local chosen, known
+    for _, entry in ipairs(banks) do
+        if entry.guid == selectedBank then
+            chosen = entry
+        end
+        if entry.bank and not known then
+            known = entry
+        end
+    end
+    if chosen and chosen.bank then
+        return chosen
+    end
+    return known or chosen or banks[1]
 end
 
 function BankView.Create(parent)
@@ -667,13 +696,7 @@ function BankView.Refresh(view)
     view.refreshing = true
     local guild = ns.Data.CurrentGuild(false)
     local banks = BankView.Banks(guild)
-    local entry
-    for _, bank in ipairs(banks) do
-        if bank.guid == selectedBank then
-            entry = bank
-        end
-    end
-    entry = entry or banks[1]
+    local entry = Shown(banks)
     selectedBank = entry and entry.guid
     view.banks, view.entry = banks, entry
     view.Dropdown:GenerateMenu()

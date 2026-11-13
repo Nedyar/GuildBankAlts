@@ -1,24 +1,38 @@
 -- RequestForm.lua: the dialog that makes a withdrawal request, opened by
 -- right-clicking an item of a guild bank character (BankView.lua): how
--- many, how the items are to be delivered (in person, or by mail with the
--- postage charged cash on delivery), and an optional note for the bank.
+-- many (no more than it holds, less what the accepted requests made to it
+-- still await: Requests.Reserved), how the items are to be delivered (in
+-- person, or by mail with the postage charged cash on delivery), and an
+-- optional note for the bank.
 local _, ns = ...
 local L = ns.L
 
 local RequestForm = {}
 ns.RequestForm = RequestForm
 
-local WIDTH, HEIGHT = 380, 342
+local WIDTH, HEIGHT = 380, 354  -- room for an error on two lines
 local DESCRIPTION_WIDTH = 300
 
 local form
-local current       -- { bank, itemString, available, delivery }
+local current       -- { bank, itemString, holding, reserved, available, delivery }
 local lastDelivery  -- the last delivery chosen, the next form's default
 
 local function Close()
     if form then
         form:Hide()
     end
+end
+
+-- Why no more than current.available can be asked for: what the bank
+-- holds, less what accepted requests set aside.
+local function TooMany()
+    if current.reserved == 0 then
+        return L["The bank holds only %d."]:format(current.available)
+    elseif current.available == 0 then
+        return L["None can be requested: all %d the bank holds are set aside for accepted requests."]:format(current.holding)
+    end
+    return L["Only %d can be requested: the bank holds %d, %d of them set aside for accepted requests."]
+        :format(current.available, current.holding, current.reserved)
 end
 
 local function SetDelivery(delivery)
@@ -33,7 +47,7 @@ local function Submit()
         form.Error:SetText(L["Enter how many you want."])
         return
     elseif quantity > current.available then
-        form.Error:SetText(L["The bank holds only %d."]:format(current.available))
+        form.Error:SetText(TooMany())
         return
     end
     local id, reason = ns.Requests.Create(current.bank, current.itemString, quantity, form.Note:GetText(), current.delivery)
@@ -128,8 +142,13 @@ local function Create()
     form.Quantity:SetNumeric(true)
     form.Quantity:SetMaxLetters(5)
     form.Quantity:SetTextInsets(0, 6, 0, 0)
+    -- How many may be asked for; on two lines if it must, with what accepted
+    -- requests set aside.
     form.Available = form:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     form.Available:SetPoint("LEFT", form.Quantity, "RIGHT", 8, 0)
+    form.Available:SetWidth(WIDTH - 20 - quantityLabel:GetStringWidth() - 12 - 70 - 8 - 16)
+    form.Available:SetJustifyH("LEFT")
+    form.Available:SetWordWrap(true)
 
     local noteLabel = Label(L["Note (optional)"], quantityLabel, -16)
     form.Note = CreateFrame("EditBox", nil, form, "InputBoxTemplate")
@@ -172,12 +191,16 @@ local function Create()
     end
 end
 
--- Opens the form for an item a bank character holds (available of it).
-function RequestForm.Open(bank, itemString, available)
+-- Opens the form for an item a bank character holds (holding of it, of
+-- which accepted requests still await reserved): no more than what is
+-- left may be asked for.
+function RequestForm.Open(bank, itemString, holding, reserved)
     if not form then
         Create()
     end
-    current = { bank = bank, itemString = itemString, available = math.max(available or 0, 1) }
+    holding = math.max(holding or 0, 0)
+    reserved = math.min(math.max(reserved or 0, 0), holding)
+    current = { bank = bank, itemString = itemString, holding = holding, reserved = reserved, available = holding - reserved }
     SetDelivery(lastDelivery or ns.Requests.IN_PERSON)
     local name, _, quality, icon = ns.BankView.ItemInfo(itemString)
     form.Item.Icon:SetTexture(icon)
@@ -190,10 +213,15 @@ function RequestForm.Open(bank, itemString, available)
     end
     local guild = ns.Data.CurrentGuild(false)
     form.From:SetText(L["From the bank of %s"]:format(ns.Data.NameOf(bank, guild and guild.members[bank])))
-    form.Available:SetText(L["of %d"]:format(current.available))
+    if current.reserved > 0 then
+        form.Available:SetText(L["of %d available (%d set aside for accepted requests)"]:format(current.available, current.reserved))
+    else
+        form.Available:SetText(L["of %d"]:format(current.available))
+    end
     form.Quantity:SetText("1")
     form.Note:SetText("")
-    form.Error:SetText("")
+    -- With nothing left, say so at once.
+    form.Error:SetText(current.available == 0 and TooMany() or "")
     form:Show()
     form.Quantity:SetFocus()
     form.Quantity:HighlightText()

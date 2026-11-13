@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.2 - Accepted requests
+
+- **Requests can be accepted**: an Accept button, beside Reject, for bank characters, officers and the guild master, on requests pending or partly delivered. It is enabled only if the bank character has enough of the item to spare: what it holds, less what its other accepted requests still await of it; else its tooltip says how many it has to spare. An accepted request can still be rejected. Its maker is told in the chat and cannot delete it. Its row in the list is green.
+- **Two buttons under the request list act on several requests at once**: Delete my rejected, for everyone, deletes all of one's rejected requests; Reject short of stock, for bank characters, officers and the guild master, rejects every request pending or partly delivered that its bank character has not enough to spare for (as Accept counts it), after asking. Their tooltips say how many and list them. Accepted requests are left alone.
+- **The request form sets aside what accepted requests still await**: you can ask for what the bank character holds less that, and the text by the quantity says how many are set aside ("of 14 available (6 set aside for accepted requests)"), as does the error when you ask for more. With all of it set aside, the form says at once that none can be asked for.
+- **Prepare and Mail only on accepted requests**: a bank character accepts a request (or an officer does) before getting it ready. Stacks kept for a request are let go once it is no longer accepted.
+- **Which request a delivery counts towards**, when the same member has several for the same item: the one a mail was made ready for with the Mail button, then the accepted ones, then the others still open, then the rejected ones; the oldest first among each.
+- **A delivered request goes from the list** once its maker's addon has told them (the log keeps what was handed over), instead of staying a week. A rejected request still goes after a week, or when its maker deletes it.
+- **Closed requests of a member who no longer plays go too**: a rejected or delivered request a week old is no longer listed, though its maker's addon, not run since, could not drop it.
+- **A rejected request's row is red**, as an accepted one's is green.
+- **The notification mark** shows, for the maker of a request, once it is accepted, until they point at it in the list, and while it is rejected, until they delete it (or a week passes), no longer only until the list is seen; on the Requests subtab too, on the icon of each request it is for, the bank character's waiting ones included, and on the micro menu's button that opens the guild window, as the game marks it for unread messages (from logging in, before the guild window is first opened).
+- **Members on 0.3.1 and older keep working with members on 0.3.2**: the acceptance travels where they skip it, so to them an accepted request is pending.
+- **Fixed: Prepare kept a request's items in more stacks than it takes.** When no stack held what one was to hold, it took several, each kept as a stack of its own (for 35, with 1 and 20 in the bags and 14 in the bank: the 20, the 14 and the 1). Now it puts them together into one (the bank's 14 onto the 1, a 15), onto a stack of the bags where it is, or onto one the request already keeps that is not full.
+- **A bigger padlock on kept stacks**, all within the item's icon (it was small, and stood out of the icon's corner).
+- **Fixed: the guild tab's selection glow covered its notification mark.** The mark now sits on a frame of its own over the tab, as the game's Roster tab has it.
+- **Fixed: choosing a bank character that had not shared what it holds yet** (just given the bank's rank, not logged in with the addon since) gave a Lua error and left the Bank subtab stuck. Such a bank character is now greyed out in the dropdown, its tooltip saying why, and the subtab shows one it knows.
+
 ## 0.3.1 - Rejected requests told
 
 - **A rejected request is told to whoever made it** as a bank character is told of the requests waiting for it: the Requests subtab counts it ("Requests (1)") and the guild window's tab shows the notification mark, until its maker sees it listed in the Requests subtab (with "Only open requests" off, which hides it). The chat line it already got stays.

@@ -2,10 +2,12 @@
 -- the game. Two uses:
 --   - what it hands over to the members who requested it, by trade or by
 --     mail: each item given counts towards the giver's requests from that
---     member for that item, the oldest first, until each has its quantity:
---     it is then approved (Requests.Deliver). Deliveries in several goes add
---     up, by trade and mail alike. A rejected request whose items are
---     delivered anyway is approved too;
+--     member for that item, until each has its quantity: it is then
+--     approved (Requests.Deliver). First the request a mail was made ready
+--     for with its Mail button (Prepare.lua), then the accepted ones, then
+--     the other open ones, then the rejected ones (delivered anyway, they
+--     are approved too); the oldest first among each. Deliveries in several
+--     goes add up, by trade and mail alike;
 --   - the bank's log (Log.lua): every item and every coin it gives or gets,
 --     by trade, by mail (sent, or taken from the mailbox), the cash on
 --     delivery and the postage it pays, and the money it puts into the guild
@@ -30,9 +32,13 @@ end
 
 -- Counting ---------------------------------------------------------------------------
 
+-- Which requests a delivery counts towards first (see the top of this file).
+local ORDER = { accepted = 1, pending = 2, partial = 2, rejected = 3 }
+
 -- What we gave a guildmate (partner, a GUID): given is { [itemID] = count }.
--- Only a bank character's deliveries count.
-function Deliveries.Exchanged(partner, given)
+-- first: the key of the request it counts towards first (a mail made ready
+-- with the Mail button), or nil. Only a bank character's deliveries count.
+function Deliveries.Exchanged(partner, given, first)
     local guild = Data.CurrentGuild(false)
     if not guild or not partner or partner == ns.playerGUID or not ns.Ranks.IsBank(ns.playerGUID) then
         return
@@ -47,9 +53,13 @@ function Deliveries.Exchanged(partner, given)
             views[#views + 1] = view
         end
     end
-    -- The oldest first.
+    local function Rank(view)
+        return view.key == first and 0 or ORDER[view.state] or 2
+    end
     table.sort(views, function(a, b)
-        if a.request.c ~= b.request.c then
+        if Rank(a) ~= Rank(b) then
+            return Rank(a) < Rank(b)
+        elseif a.request.c ~= b.request.c then
             return a.request.c < b.request.c
         end
         return a.id < b.id
@@ -145,11 +155,12 @@ end
 -- bank's log (Log.TRADE...). partner: the GUID of the guildmate, if it is
 -- one; name: as the game gave it. before: our money before (see
 -- Log.Record).
-local function Exchanged(what, via, partner, name, given, received, moneyGiven, moneyReceived, before)
+-- first: the request the items count towards first (Deliveries.Exchanged).
+local function Exchanged(what, via, partner, name, given, received, moneyGiven, moneyReceived, before, first)
     ns.Debug("%s, %s: gave %s and %d copper, got %s and %d copper", what, tostring(name), Describe(given), moneyGiven or 0,
         Describe(received), moneyReceived or 0)
     if given and next(given) ~= nil then
-        ns.SafeCall(Deliveries.Exchanged, partner, ByID(given))
+        ns.SafeCall(Deliveries.Exchanged, partner, ByID(given), first)
     end
     ns.SafeCall(ns.Log.Record, via, ShownName(partner, name), given, received, moneyGiven, moneyReceived, before)
 end
@@ -230,6 +241,15 @@ local function Attached()
     return items
 end
 
+-- The request the last mail made ready with the Mail button was for:
+-- { requester = GUID, key }, until a mail is sent or the mailbox closes.
+local readyFor
+
+-- Prepare.lua: a mail was made ready for the request key of requester.
+function Deliveries.MailReadyFor(requester, key)
+    readyFor = { requester = requester, key = key }
+end
+
 local function OnSendMail(recipient)
     local items, postage = Attached(), Postage()
     if next(items) == nil then
@@ -239,6 +259,11 @@ local function OnSendMail(recipient)
     outgoing = {
         to = ns.Plain(recipient), items = items, money = SentMoney(), postage = postage, before = ns.Number(GetMoney()),
     }
+    -- Sent to whom it was made ready for: its items count towards that
+    -- request first.
+    if readyFor and ByName(outgoing.to) == readyFor.requester then
+        outgoing.first = readyFor.key
+    end
 end
 
 -- Mail taken: the items and money of a mail as they are taken from it,
@@ -344,11 +369,11 @@ local function OnEvent(_, event, ...)
         attached, attachedPostage = Attached(), Postage()
     elseif event == "MAIL_SEND_SUCCESS" then
         local sent = outgoing
-        outgoing, attached, attachedPostage = nil, {}, 0
+        outgoing, attached, attachedPostage, readyFor = nil, {}, 0, nil
         if sent then
             local partner = ByName(sent.to)
             Exchanged("mail to " .. tostring(sent.to), ns.Log.MAIL, partner, sent.to, sent.items, nil, sent.money, nil,
-                sent.before)
+                sent.before, sent.first)
             if sent.postage > 0 then
                 Exchanged("postage of a mail to " .. tostring(sent.to), ns.Log.POSTAGE, partner, sent.to, nil, nil, sent.postage, nil,
                     sent.before and (sent.before - sent.money))
@@ -356,6 +381,8 @@ local function OnEvent(_, event, ...)
         end
     elseif event == "MAIL_FAILED" then
         outgoing = nil
+    elseif event == "MAIL_CLOSED" then
+        readyFor = nil
     elseif event == "MAIL_INBOX_UPDATE" then
         local taken = taking
         taking = {}
@@ -393,7 +420,7 @@ function Deliveries.Init()
     local frame = CreateFrame("Frame")
     ns.RegisterEvents(frame, "TRADE_SHOW", "TRADE_CLOSED", "TRADE_PLAYER_ITEM_CHANGED", "TRADE_TARGET_ITEM_CHANGED",
         "TRADE_MONEY_CHANGED", "TRADE_ACCEPT_UPDATE", "UI_INFO_MESSAGE", "UI_ERROR_MESSAGE", "MAIL_SEND_INFO_UPDATE",
-        "MAIL_SEND_SUCCESS", "MAIL_FAILED", "MAIL_INBOX_UPDATE", "PLAYER_MONEY")
+        "MAIL_SEND_SUCCESS", "MAIL_FAILED", "MAIL_CLOSED", "MAIL_INBOX_UPDATE", "PLAYER_MONEY")
     frame:SetScript("OnEvent", OnEvent)
     Hook(_G, "SendMail", OnSendMail)
     Hook(C_Mail, "SendMail", OnSendMail)

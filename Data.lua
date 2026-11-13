@@ -4,9 +4,12 @@
 -- bank's records (see Pack.lua for the fields).
 --
 -- GuildBankAltsDB.own[GUID] keeps, for each character of the account:
--- sentFP, sentGuild (the sync's), lastRequest, requestStates, requestsSeen
--- (when we last saw our rejected requests, RequestList.lua) and prepared
--- (the stacks kept for requests, Prepare.lua).
+-- sentFP, sentGuild (the sync's), lastRequest, requestStates (how the
+-- requests that concern us stood, for the chat notices, RequestList.lua),
+-- acceptedSeen (our accepted requests whose notice we saw, pointing at
+-- their row, RequestList.lua) and prepared (the stacks kept for requests,
+-- Prepare.lua). 0.3.1 also
+-- kept requestsSeen, no longer used.
 local _, ns = ...
 local Lib = ns.Lib
 local Pack, Data = ns.Pack, ns.Data
@@ -127,6 +130,28 @@ local function CleanAnswers(answers)
     return clean
 end
 
+local function CleanAccepted(accepted)
+    if type(accepted) ~= "table" then
+        return nil
+    end
+    local clean, count = {}, 0
+    for key, at in pairs(accepted) do
+        local requester, id
+        if type(key) == "string" then
+            requester, id = key:match("^(.+):(%d+)$")
+        end
+        if not requester or not Data.IsGUID(requester) or not IsID(tonumber(id)) or not IsTime(at) then
+            return nil
+        end
+        clean[key] = at
+        count = count + 1
+        if count > LIMITS.answers then
+            return nil
+        end
+    end
+    return clean
+end
+
 -- Logs (see Log.lua) ------------------------------------------------------------
 
 -- A name in a log: who items or money came from or went to, or a tab of the
@@ -230,7 +255,7 @@ function Data.CleanRecord(record, now)
         return nil
     end
     for field, cleaner in pairs({ bk = CleanBank, rq = CleanRequests, ra = CleanAnswers, gb = CleanGuildMoney,
-            lg = CleanLog, gl = CleanGuildLog }) do
+            lg = CleanLog, gl = CleanGuildLog, ac = CleanAccepted }) do
         if record[field] ~= nil then
             clean[field] = cleaner(record[field], clean.t)
             if not clean[field] then
@@ -243,7 +268,9 @@ end
 
 -- Comparing and merging --------------------------------------------------------
 
--- The parts of a record a copy may lack: one point each.
+-- The parts of a record a copy may lack: one point each. Not the accepted
+-- requests (ac): members on older versions cannot keep them, so copies of
+-- the same time would never count alike and be sent back and forth.
 local PARTS = { "bk", "gb", "rq", "ra", "lg", "gl" }
 
 -- How complete a record is: how many of its parts are known.
@@ -259,12 +286,13 @@ function Data.Stats(record)
     return parts
 end
 
--- The copy kept of a member takes the requests, answers and logs only the
--- other copy knows: the owner lost its data and has not seen the guild's
--- copy yet. Returns true if it took any.
+-- The copy kept of a member takes the requests, answers, logs and accepted
+-- requests only the other copy knows: the owner lost its data and has not
+-- seen the guild's copy yet, or (accepted requests) the copy came through a
+-- member on an older version, which drops them. Returns true if it took any.
 function Data.CarryMissing(kept, other)
     local changed = false
-    for _, field in ipairs({ "rq", "ra", "lg", "gl" }) do
+    for _, field in ipairs({ "rq", "ra", "lg", "gl", "ac" }) do
         if kept[field] == nil and other[field] ~= nil then
             kept[field] = other[field]
             changed = true
