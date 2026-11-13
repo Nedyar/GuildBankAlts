@@ -19,6 +19,11 @@ Pack.LIMITS = {
     guildLog = 100,  -- entries of the guild vault's log a member keeps
     logCount = 1000000, -- items of one kind in a log entry
     tabs = 8,        -- the guild vault's tabs
+    rankName = 32,   -- bytes of a rank's name in the guild's options
+    bankRanks = 10,  -- bank ranks in the guild's options
+    optionRanks = 20, -- ranks the guild's options name, at one place
+    optionBanks = 30, -- bank characters the guild's options name
+    options = 8000,  -- bytes of the guild's options, packed
 }
 
 -- The types of the guild vault's log entries (gl), by the names the game
@@ -68,6 +73,13 @@ Pack.VAULT_TYPES = {
 --       the guild master): { ["<requester GUID>:<id>"] = when }. Apart
 --       from ra, which older versions read to the letter, at the end of the
 --       record, which they skip: to them an accepted request is pending.
+--   cf = the guild's options, in the guild master's record (any other
+--       member's are ignored; see Ranks.lua): { t = when they were set,
+--       bn = { bank rank names }, rp = { [rank] = what it may do (flags
+--       of Ranks.LOG, MAKE, ACCEPT, REJECT) }, bv = { [bank character's
+--       GUID] = { [rank] = what it may see of it (Ranks.ITEMS, MONEY) } } },
+--       ranks by their names in lower case. Packed apart, with a format
+--       number of its own: a later format is skipped, not refused.
 -- rq, ra, lg and ac are nil until known: a client that lost its data does
 -- not tell the guild it has none.
 -- A packed record is prefixed by its length, so fields added later are
@@ -284,6 +296,85 @@ local function ReadAccepted(reader)
     return accepted
 end
 
+-- The guild's options (cf): a text of their own, empty for none (a field
+-- after it, in a later version, would need it written), which starts with
+-- the format's number.
+local OPTIONS_FORMAT = 1
+
+local function WriteFlags(writer, map)
+    local keys = SortedKeys(map)
+    writer:UInt(#keys)
+    for _, key in ipairs(keys) do
+        writer:Str(key)
+        writer:UInt(map[key])
+    end
+end
+
+local function ReadFlags(reader)
+    local count = reader:UInt()
+    if count > LIMITS.optionRanks then
+        error("too many ranks", 0)
+    end
+    local map = {}
+    for _ = 1, count do
+        local key = reader:Str(LIMITS.rankName)
+        map[key] = reader:UInt()
+    end
+    return map
+end
+
+local function WriteOptions(writer, options)
+    if not options then
+        writer:Str("")
+        return
+    end
+    local inner = Pack.Writer()
+    inner:UInt(OPTIONS_FORMAT)
+    inner:UInt(options.t)
+    inner:UInt(#options.bn)
+    for _, name in ipairs(options.bn) do
+        inner:Str(name)
+    end
+    WriteFlags(inner, options.rp)
+    local banks = SortedKeys(options.bv)
+    inner:UInt(#banks)
+    for _, bank in ipairs(banks) do
+        inner:Str(bank)
+        WriteFlags(inner, options.bv[bank])
+    end
+    writer:Str(inner:Result())
+end
+
+local function ReadOptions(reader)
+    local text = reader:Str(LIMITS.options)
+    if text == "" then
+        return nil
+    end
+    reader = Pack.Reader(text)
+    if reader:UInt() ~= OPTIONS_FORMAT then
+        -- Set by a later version, in a form this one does not know.
+        return nil
+    end
+    local options = { t = reader:UInt(), bn = {}, bv = {} }
+    local count = reader:UInt()
+    if count > LIMITS.bankRanks then
+        error("too many bank ranks", 0)
+    end
+    for index = 1, count do
+        options.bn[index] = reader:Str(LIMITS.rankName)
+    end
+    options.rp = ReadFlags(reader)
+    count = reader:UInt()
+    if count > LIMITS.optionBanks then
+        error("too many bank characters", 0)
+    end
+    for _ = 1, count do
+        local bank = reader:Str()
+        options.bv[bank] = ReadFlags(reader)
+    end
+    return options
+end
+
 -- Logs: oldest first, each time written as the gap from the one before,
 -- which most often fits in one or two bytes.
 local function WriteWhat(writer, entry)
@@ -422,6 +513,11 @@ local function RecordBody(guid, record)
     WriteGuildLog(writer, record.gl)
     -- Since 0.3.2: older readers skip it.
     WriteAccepted(writer, record.ac)
+    -- Since 0.4.0: older readers skip it. Only when there are options (the
+    -- guild master's record), so the others pack as they did before.
+    if record.cf then
+        WriteOptions(writer, record.cf)
+    end
     return writer:Result()
 end
 
@@ -462,6 +558,10 @@ function Pack.ReadRecord(reader)
     -- Records packed before 0.3.2 end here.
     if not reader:AtEnd() then
         record.ac = ReadAccepted(reader)
+    end
+    -- Records packed before 0.4.0 end here.
+    if not reader:AtEnd() then
+        record.cf = ReadOptions(reader)
     end
     -- Anything left was added by a later version.
     return guid, record

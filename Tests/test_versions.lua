@@ -3,7 +3,7 @@ local H = ...
 -- Members on the last release and members on this version share one guild:
 -- both must keep talking, whoever holds the bank character. The release is
 -- taken from its git tag (H.Release); it runs on this LibGuildSync.
-local RELEASE = "v0.3.1"
+local RELEASE = "v0.3.2"
 
 H.section("Versions: against " .. RELEASE)
 local old = H.Release(RELEASE)
@@ -146,31 +146,47 @@ end
 H.eq(told, bank.ns.VERSION_NUM > oldMember.ns.VERSION_NUM, "members on " .. RELEASE .. " are told to update only once this version is out")
 Errors(world, "log across versions")
 
--- An accepted request (since 0.3.2): the bank character on this version
--- accepts a request of a member on the release, whose client keeps taking
--- its record, and sees the request pending; members on this version see it
--- accepted.
+-- The guild's options (since 0.4.0), in the guild master's record: a member
+-- on the release keeps taking that record and passing it on, the options
+-- unknown to it; members on this version follow them. A copy passed on by
+-- a member on the release has no options: a member on this version keeps
+-- those it knew.
 world = H.NewWorld({ seed = 47, senderFormat = "short", strictWhispers = true })
+local master = world:NewClient("Guild Master", { rank = "GM", rankIndex = 0 })
 bank = world:NewClient("Bank Holder", { rank = "Banco", rankIndex = 4, containers = { [0] = { size = 16, [1] = { 2589, 20 } } } })
 oldMember = world:NewClient("Old Member", { rank = "Miembro", rankIndex = 3, addons = OLD })
 newMember = world:NewClient("New Member", { rank = "Miembro", rankIndex = 3 })
-for _, client in ipairs({ bank, oldMember, newMember }) do
+for _, client in ipairs({ master, bank, oldMember, newMember }) do
     world:Login(client)
 end
 world:RunFor(60)
-local id = oldMember.ns.Requests.Create(bank.guid, "item:2589", 5, "", 1)
-world:RunFor(150)
-H.check(id ~= nil and bank.ns.Requests.Accept(oldMember.guid, id), "the bank character accepts the request of a member on " .. RELEASE)
+local Ranks = master.ns.Ranks
+H.check(Ranks.SetRankFlag("Miembro", Ranks.MAKE, false), "the guild master takes requests away from the rank Miembro")
 world:RunFor(200)
-local function StateAt(client)
-    local view = client.ns.Requests.Find(client.ns.Data.CurrentGuild(false), oldMember.guid, id)
-    return view and view.state
+local function MasterCopy(client)
+    return client.ns.Data.GetGuild("Test Guild").members[master.guid]
 end
-local copy = oldMember.ns.Data.GetGuild("Test Guild").members[bank.guid]
-H.check(copy ~= nil and copy.t == bank.ns.Data.GetOwnRecord(false).t, "who keeps taking the bank character's record")
-H.eq(StateAt(oldMember), "pending", "and sees the request pending")
-H.eq(StateAt(newMember), "accepted", "a member on this version sees it accepted")
-world:Trade(bank, oldMember, { [1] = { 2589, 5 } }, {})
+local copy = MasterCopy(oldMember)
+H.check(copy ~= nil and copy.t == master.ns.Data.GetOwnRecord(false).t, "a member on " .. RELEASE .. " keeps taking the guild master's record")
+H.check(oldMember.ns.Requests.Create(bank.guid, "item:2589", 1, "", 1) ~= nil, "and, not knowing the options, still makes requests")
+H.check(newMember.ns.Ranks.Options() ~= nil and not newMember.ns.Ranks.Can(newMember.guid, Ranks.MAKE)
+    and select(2, newMember.ns.Requests.Create(bank.guid, "item:2589", 1, "", 1)) == "rank",
+    "a member on this version follows them: it may not make requests")
+-- The guild master changes their record while the member on this version
+-- is away, and logs out: the member back gets it from the member on the
+-- release, without the options.
+world:Logout(newMember)
+world:RunFor(30)
+H.check(master.ns.Requests.Create(bank.guid, "item:2589", 1, "", 1) ~= nil, "(the guild master's record changes)")
 world:RunFor(200)
-H.eq(StateAt(oldMember), "approved", "delivered, approved for the member on " .. RELEASE)
-Errors(world, "accepted across versions")
+local masterTime = master.ns.Data.GetOwnRecord(false).t
+H.check(MasterCopy(oldMember).t == masterTime, "(the member on " .. RELEASE .. " has it)")
+world:Logout(master)
+world:RunFor(30)
+world:Login(newMember)
+world:RunFor(300)
+local kept = MasterCopy(newMember)
+H.check(kept ~= nil and kept.t == masterTime and kept.cf ~= nil
+    and not newMember.ns.Ranks.Can(newMember.guid, Ranks.MAKE),
+    "a member on this version gets the newer record through a member on " .. RELEASE .. ", keeping the options it knew")
+Errors(world, "options across versions")

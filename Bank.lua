@@ -373,5 +373,15 @@ function Bank.Init()
     end)
     ns.On("RosterUpdated", Schedule)
     ns.On("GuildChanged", Schedule)
+    -- The guild master's options may make our rank a bank rank, or no
+    -- longer one (Ranks.lua).
+    local wasBank
+    ns.On("DataChanged", function()
+        local isBank = ns.Ranks.IsBank(ns.playerGUID)
+        if isBank ~= wasBank then
+            wasBank = isBank
+            Schedule()
+        end
+    end)
     Schedule()
 end

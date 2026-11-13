@@ -111,17 +111,27 @@ BankView.ItemString = ItemString
 
 -- Bank characters -------------------------------------------------------------------
 
--- The guild's bank characters, by name: { { guid, name, record, bank }... },
--- record and bank being nil for one that has not shared what it holds.
+-- The guild's bank characters we may see something of, by name: { { guid,
+-- name, record, bank, items, money }... }, record and bank being nil for one
+-- that has not shared what it holds, items and money whether our rank may
+-- see them (Ranks.CanSee). Also how many bank characters the guild has.
 function BankView.Banks(guild)
-    local list = {}
+    local list, all = {}, 0
+    local Ranks = ns.Ranks
     for guid, member in pairs(ns.Roster.members) do
-        if ns.Ranks.IsBank(guid) then
-            local record = guild and guild.members[guid]
-            if record and not ns.Data.IsShareable(record) then
-                record = nil
+        if Ranks.IsBank(guid) then
+            all = all + 1
+            local items = Ranks.CanSee(ns.playerGUID, guid, Ranks.ITEMS)
+            local money = Ranks.CanSee(ns.playerGUID, guid, Ranks.MONEY)
+            if items or money then
+                local record = guild and guild.members[guid]
+                if record and not ns.Data.IsShareable(record) then
+                    record = nil
+                end
+                list[#list + 1] = {
+                    guid = guid, name = member.n, record = record, bank = record and record.bk, items = items, money = money,
+                }
             end
-            list[#list + 1] = { guid = guid, name = member.n, record = record, bank = record and record.bk }
         end
     end
     table.sort(list, function(a, b)
@@ -130,7 +140,7 @@ function BankView.Banks(guild)
         end
         return a.guid < b.guid
     end)
-    return list
+    return list, all
 end
 
 -- Every container of a bank character, bags then bank.
@@ -233,6 +243,8 @@ local function SlotOnEnter(slot)
     GameTooltip:AddLine(L["%d in this bank"]:format(BankView.Holding(owner.bank, item.i)), NORMAL_FONT_COLOR:GetRGB())
     if owner.guid == ns.playerGUID then
         GameTooltip:AddLine(L["This is your own bank."], 0.7, 0.7, 0.7)
+    elseif not ns.Ranks.Can(ns.playerGUID, ns.Ranks.MAKE) then
+        GameTooltip:AddLine(L["Your rank may not make requests."], 0.7, 0.7, 0.7)
     else
         GameTooltip:AddLine(L["Right-click to request it."], GREEN_FONT_COLOR:GetRGB())
     end
@@ -246,7 +258,7 @@ local function SlotOnClick(slot, mouseButton)
     end
     local itemString = ItemString(item)
     if mouseButton == "RightButton" then
-        if owner.guid ~= ns.playerGUID then
+        if owner.guid ~= ns.playerGUID and ns.Ranks.Can(ns.playerGUID, ns.Ranks.MAKE) then
             ns.RequestForm.Open(owner.guid, itemString, BankView.Holding(owner.bank, item.i),
                 ns.Requests.Reserved(ns.Data.CurrentGuild(false), owner.guid, item.i))
         end
@@ -695,7 +707,7 @@ function BankView.Refresh(view)
     end
     view.refreshing = true
     local guild = ns.Data.CurrentGuild(false)
-    local banks = BankView.Banks(guild)
+    local banks, all = BankView.Banks(guild)
     local entry = Shown(banks)
     selectedBank = entry and entry.guid
     view.banks, view.entry = banks, entry
@@ -703,23 +715,28 @@ function BankView.Refresh(view)
     view.Dropdown:SetEnabled(#banks > 0)
 
     local bank = entry and entry.bank
+    -- Its slots, if our rank may see its items.
+    local slots = (bank and entry.items) and bank or nil
     if not entry then
-        view.Empty:SetText(L["The guild has no bank characters: give a character the rank Banco, and log in with it with this addon."])
+        view.Empty:SetText(all > 0 and L["Your rank may not see any bank character."]
+            or L["The guild has no bank characters: give a character a bank rank (Options), and log in with it with this addon."])
     elseif not bank then
         view.Empty:SetText(L["%s has not shared what it holds yet: log in with it with this addon."]:format(entry.name))
+    elseif not slots then
+        view.Empty:SetText(L["Your rank may not see what %s holds."]:format(entry.name))
     else
         view.Empty:SetText("")
     end
-    LayOut(view, entry, bank and BankView.Cells(bank) or {})
-    LayOutBags(view, bank and BankView.BagSlots(bank) or {})
+    LayOut(view, entry, slots and BankView.Cells(slots) or {})
+    LayOutBags(view, slots and BankView.BagSlots(slots) or {})
 
     local guildMoney, guildMoneyTime = ns.Bank.GuildMoney(guild)
     view.guildMoneyTime = guildMoneyTime
     view.GuildMoney:SetText(L["In the bank: %s"]:format(guildMoney and Money(guildMoney) or "-"))
-    view.Money:SetText(bank and L["On the character: %s"]:format(Money(bank.m or 0)) or "")
-    view.Search:SetShown(bank ~= nil)
+    view.Money:SetText(bank and entry.money and L["On the character: %s"]:format(Money(bank.m or 0)) or "")
+    view.Search:SetShown(slots ~= nil)
     view.Footer:SetShown(bank ~= nil)
-    view.Empty:SetShown(bank == nil)
+    view.Empty:SetShown(slots == nil)
     view.refreshing = false
     ns.MailToBank.Update()
 end

@@ -54,6 +54,7 @@ local function Submit()
     if not id then
         local reasons = {
             guild = L["you are not in a guild (or the guild has not loaded yet)."],
+            rank = L["Your rank may not make requests."],
             bank = L["That character is no longer a guild bank character."],
             quantity = L["Enter how many you want."],
             delivery = L["Choose how you want the items."],

@@ -152,6 +152,60 @@ local function CleanAccepted(accepted)
     return clean
 end
 
+-- The guild's options (see Ranks.lua) -------------------------------------------
+
+local function IsRankName(text)
+    return type(text) == "string" and text ~= "" and #text <= LIMITS.rankName and not text:find("[|%c]")
+end
+
+-- { [rank] = flags }, flags up to max; nil when unusable.
+local function CleanFlags(map, max)
+    if type(map) ~= "table" then
+        return nil
+    end
+    local clean, count = {}, 0
+    for key, flags in pairs(map) do
+        if not IsRankName(key) or not IsCount(flags, max) then
+            return nil
+        end
+        clean[key] = flags
+        count = count + 1
+        if count > LIMITS.optionRanks then
+            return nil
+        end
+    end
+    return clean
+end
+
+local function CleanOptions(options, newest)
+    if type(options) ~= "table" or not IsTime(options.t) or options.t > newest or type(options.bn) ~= "table"
+        or #options.bn > LIMITS.bankRanks or type(options.bv) ~= "table" then
+        return nil
+    end
+    local clean = { t = options.t, bn = {}, rp = CleanFlags(options.rp, 15), bv = {} }
+    if not clean.rp then
+        return nil
+    end
+    for index, name in ipairs(options.bn) do
+        if not IsRankName(name) then
+            return nil
+        end
+        clean.bn[index] = name
+    end
+    local count = 0
+    for bank, byRank in pairs(options.bv) do
+        clean.bv[bank] = Data.IsGUID(bank) and CleanFlags(byRank, 3) or nil
+        if not clean.bv[bank] then
+            return nil
+        end
+        count = count + 1
+        if count > LIMITS.optionBanks then
+            return nil
+        end
+    end
+    return clean
+end
+
 -- Logs (see Log.lua) ------------------------------------------------------------
 
 -- A name in a log: who items or money came from or went to, or a tab of the
@@ -255,7 +309,7 @@ function Data.CleanRecord(record, now)
         return nil
     end
     for field, cleaner in pairs({ bk = CleanBank, rq = CleanRequests, ra = CleanAnswers, gb = CleanGuildMoney,
-            lg = CleanLog, gl = CleanGuildLog, ac = CleanAccepted }) do
+            lg = CleanLog, gl = CleanGuildLog, ac = CleanAccepted, cf = CleanOptions }) do
         if record[field] ~= nil then
             clean[field] = cleaner(record[field], clean.t)
             if not clean[field] then
@@ -269,8 +323,9 @@ end
 -- Comparing and merging --------------------------------------------------------
 
 -- The parts of a record a copy may lack: one point each. Not the accepted
--- requests (ac): members on older versions cannot keep them, so copies of
--- the same time would never count alike and be sent back and forth.
+-- requests (ac) nor the guild's options (cf): members on older versions
+-- cannot keep them, so copies of the same time would never count alike and
+-- be sent back and forth.
 local PARTS = { "bk", "gb", "rq", "ra", "lg", "gl" }
 
 -- How complete a record is: how many of its parts are known.
@@ -289,7 +344,10 @@ end
 -- The copy kept of a member takes the requests, answers, logs and accepted
 -- requests only the other copy knows: the owner lost its data and has not
 -- seen the guild's copy yet, or (accepted requests) the copy came through a
--- member on an older version, which drops them. Returns true if it took any.
+-- member on an older version, which drops them. And the guild's options,
+-- if the other copy's are newer (set later, by their own time): a copy
+-- through a member on an older version has none. Returns true if it took
+-- any.
 function Data.CarryMissing(kept, other)
     local changed = false
     for _, field in ipairs({ "rq", "ra", "lg", "gl", "ac" }) do
@@ -297,6 +355,10 @@ function Data.CarryMissing(kept, other)
             kept[field] = other[field]
             changed = true
         end
+    end
+    if other.cf and (not kept.cf or other.cf.t > kept.cf.t) then
+        kept.cf = other.cf
+        changed = true
     end
     return changed
 end

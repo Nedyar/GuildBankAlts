@@ -8,7 +8,7 @@ local H = dofile(LIB_PATH .. "/Tests/harness.lua")
 
 local names = { select(3, unpack(arg)) }
 if #names == 0 then
-    names = { "unit", "sync", "bank", "log", "prepare", "versions" }
+    names = { "unit", "sync", "bank", "log", "prepare", "options", "versions" }
 end
 for _, name in ipairs(names) do
     local chunk = assert(loadfile(TESTS .. "/test_" .. name .. ".lua"))

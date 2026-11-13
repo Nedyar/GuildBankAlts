@@ -138,8 +138,9 @@ H.eq(#banks, 1, "one bank character in the guild")
 H.check(banks[1] and banks[1].bank and banks[1].bank.k ~= nil, "others see its bags and bank")
 H.eq(alice.ns.BankView.Holding(banks[1].bank, CLOTH), 40, "how many of an item it holds")
 H.check(alice.ns.Ranks.IsBank(bank.guid) and not alice.ns.Ranks.IsBank(alice.guid), "the bank rank, by name")
-H.check(alice.ns.Ranks.IsOfficer(olga.guid) and alice.ns.Ranks.IsOfficer(gus.guid) and not alice.ns.Ranks.IsOfficer(mike.guid),
-    "officers: the rank Oficial and the guild master")
+H.check(alice.ns.Ranks.CanAccept(olga.guid) and alice.ns.Ranks.CanReject(olga.guid) and alice.ns.Ranks.CanAccept(gus.guid)
+    and alice.ns.Ranks.CanReject(bank.guid) and not alice.ns.Ranks.CanAccept(mike.guid) and not alice.ns.Ranks.CanReject(mike.guid),
+    "by default, the rank Oficial, the bank ranks and the guild master answer requests")
 
 H.section("Requests: making them")
 local Requests = alice.ns.Requests

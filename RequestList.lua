@@ -470,11 +470,13 @@ function RequestList.Create(parent)
 end
 
 -- The requests the list shows, oldest first (in the order they are to be
--- seen to). onlyOpen: those not approved nor rejected; onlyMine: ours.
+-- seen to): those we may see (Requests.Visible). onlyOpen: those not
+-- approved nor rejected; onlyMine: ours.
 function RequestList.Views(onlyOpen, onlyMine)
     local list = {}
     for _, view in ipairs(ns.Requests.List(ns.Data.CurrentGuild(false))) do
-        if (not onlyOpen or not ns.Requests.IsClosed(view.state)) and (not onlyMine or view.requester == ns.playerGUID) then
+        if ns.Requests.Visible(view) and (not onlyOpen or not ns.Requests.IsClosed(view.state))
+                and (not onlyMine or view.requester == ns.playerGUID) then
             list[#list + 1] = view
         end
     end

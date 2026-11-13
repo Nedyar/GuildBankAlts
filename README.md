@@ -17,8 +17,9 @@ window, and asks them for items.
 > recipient and cash on delivery, and the Send items button's mail to a
 > bank character. The player checks the mail and sends it.
 
-- **Bank characters.** A character with the guild rank `Banco` (or `Bank`,
-  in any case) shares its money and its bags, slot by slot with the bag in
+- **Bank characters.** A character with one of the guild's bank ranks (by
+  default `Banco`, in any case; the guild master edits the list in the
+  options) shares its money and its bags, slot by slot with the bag in
   each bag slot, whenever they change. The game only lets an addon read the
   bank while it is open, so its bank (its own slots and its bank bag slots,
   bought or not) is shared each time it opens the bank, and the last read
@@ -49,8 +50,9 @@ window, and asks them for items.
   is delivered until that player does it by hand. The Requests subtab lists
   every request, oldest first, with where it stands and how it is to be
   delivered.
-  - A bank character, an officer (rank `Oficial` or `Officer`) or the guild
-    master can **accept** a request, pending or partly delivered, only if
+  - A member whose rank may (by default the bank characters, the rank
+    `Oficial` or `Officer`, and the guild master; see **Options**) can
+    **accept** a request, pending or partly delivered, only if
     the bank character it was made to has enough of the item to spare:
     what it holds (bags and bank, as it last shared them), less what the
     other accepted requests made to it still await of that item. Otherwise
@@ -154,6 +156,35 @@ window, and asks them for items.
   mark shows on the Requests subtab too, on the icon of each request it is
   for, and on the micro menu's button that opens the guild window, as the
   game marks it for unread messages.
+- **Options.** Under Options > AddOns > Guild Bank Alts, or
+  `/gbalts options`:
+  - **Guild Bank Alts**: the language of the addon's texts, this client's
+    own.
+  - The guild's, shared with every member: only the guild master changes
+    them, the others see them greyed out. Each change reaches the guild at
+    once.
+    - **Bank ranks**: the guild ranks whose characters are bank
+      characters. By default `Banco`. There is always at least one.
+    - **Permissions**: for each guild rank, whether it may see the log,
+      make requests, accept them and reject them. By default every rank
+      sees the log and makes requests, and the bank ranks and the rank
+      `Oficial` (or `Officer`) answer them. An answer counts only if its
+      author's rank may give it, and may see the bank character's items,
+      also for answers given before a change.
+    - **Bank characters**: for each bank character and each guild rank,
+      whether it sees its items and its money. By default every rank sees
+      everything. A rank that may not see a bank character's items does not
+      see the requests made to it either (but its members' own), nor answer
+      them, nor see its items in the log; one that may not see its money
+      does not see its money in the log. A bank character none of whose
+      things one may see is not in the Bank subtab's dropdown.
+  - The guild master may do everything, and a bank character always sees
+    its own bank.
+  - These rights are kept by the addon's windows: the sync still brings
+    every member all the guild's data (no addon can keep it from them); the
+    addon just does not show it, or does not let them do it.
+  - Members on 0.3.2 and older follow the old rules (the rank `Banco` or
+    `Bank`, officers and bank characters answer, everyone sees everything).
 - **Sharing in the background.** Everything goes to the rest of the guild
   through hidden addon messages, which never appear in any chat window.
   When you log in, a guild member who is online sends you whatever you are
@@ -172,14 +203,16 @@ The addon needs **LibGuildSync**, the shared code of the guild addons; the
 CurseForge app installs it with Guild Bank Alts. By hand, copy both the
 `GuildBankAlts` and `LibGuildSync` folders into
 `World of Warcraft\_forever_\Interface\AddOns\`. Give the bank characters
-the guild rank `Banco` (or `Bank`), and log in with each of them once with
-the addon; open each one's bank once so its bank is shared too.
+the guild rank `Banco` (or another the guild master adds in the options),
+and log in with each of them once with the addon; open each one's bank once
+so its bank is shared too.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
 | `/gbalts` or `/gbalts status` | What the addon knows and is doing |
+| `/gbalts options` | The options: the language, and the guild's bank ranks and permissions |
 | `/gbalts sync` | Ask the guild for missing data now |
 | `/gbalts language <code>\|auto` | The language of the addon's own texts |
 | `/gbalts debug` | Show the sync log in the chat |

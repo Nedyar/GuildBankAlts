@@ -12,6 +12,7 @@ local LogView = {}
 ns.LogView = LogView
 
 local ROW_HEIGHT = 18
+local EMPTY  -- what the list says while it has no lines (LogView.Create)
 local BANK_COLOR, VAULT_COLOR, NOTE_COLOR = "ff66bbff", "ff40ff40", "ff808080"
 
 -- The game's texts (GlobalStrings), in the client's language as in its own
@@ -256,7 +257,8 @@ end
 -- An item's line: the item's tooltip. A money line: where it belongs, and
 -- the money before and after; for a bank character's money put into the
 -- guild vault or taken from it, both the vault's and the bank character's;
--- for money one bank character gave another, both bank characters'. Then
+-- for money one bank character gave another, both bank characters'. Not a
+-- bank character's whose money we may not see (LogView.Visible). Then
 -- when it happened (for a mail taken later, when each did its part). If
 -- the row cuts the line short, the whole line, without how long ago: unless
 -- that is all it cuts, as when it happened tells it.
@@ -287,7 +289,11 @@ local function RowOnEnter(row)
     if whole then
         GameTooltip:AddLine(whole, 1, 1, 1, true)
     end
+    -- Not the other bank character's money, if we may not see it.
     local pair = line.pair
+    if pair and not LogView.Visible(pair) then
+        pair = nil
+    end
     local apart = pair and pair.source == "bank" and line.source == "bank" and math.abs(pair.entry.t - line.entry.t) >= 60
     AddBalance(line)
     if apart then
@@ -362,12 +368,25 @@ function LogView.Create(parent)
     list.Empty = list:CreateFontString(nil, "ARTWORK", "GameFontDisable")
     list.Empty:SetPoint("CENTER")
     list.Empty:SetWidth(420)
-    list.Empty:SetText(L["Nothing in the log yet. It shows what the bank characters trade and mail, and the guild vault's own log once a member opens it."])
+    EMPTY = L["Nothing in the log yet. It shows what the bank characters trade and mail, and the guild vault's own log once a member opens it."]
+    list.Empty:SetText(EMPTY)
     return list
 end
 
--- The lines the list shows. filters: items, money (entries of each kind),
--- banks, vault (entries of each source), true to show them.
+-- Whether our rank may see a line (Ranks.lua): a bank character's entry of
+-- items if it may see its items, one of money if it may see its money. The
+-- guild vault's, all of them: its own log shows them to the guild.
+function LogView.Visible(line)
+    if line.source ~= "bank" then
+        return true
+    end
+    local Ranks = ns.Ranks
+    return ns.playerGUID ~= nil and Ranks.CanSee(ns.playerGUID, line.bank, line.entry.i and Ranks.ITEMS or Ranks.MONEY)
+end
+
+-- The lines the list shows: those we may see (LogView.Visible). filters:
+-- items, money (entries of each kind), banks, vault (entries of each
+-- source), true to show them.
 function LogView.Lines(filters)
     local lines = {}
     for _, line in ipairs(ns.Log.Lines(ns.Data.CurrentGuild(false))) do
@@ -375,10 +394,11 @@ function LogView.Lines(filters)
         local source = line.source == "bank" and filters.banks or (line.source == "vault" and filters.vault)
         -- A bank character's money at the vault shows as the vault's line,
         -- unless the vault's lines are hidden; money one bank character gave
-        -- another, as the giver's line.
+        -- another, as the giver's line, unless we may not see the giver's.
         local pair = line.pair
-        local shown = not (line.source == "bank" and pair
-            and (pair.source == "vault" and filters.vault or pair.source == "bank" and line.entry.a == ns.Log.IN))
+        local shown = LogView.Visible(line) and not (line.source == "bank" and pair
+            and (pair.source == "vault" and filters.vault
+                or pair.source == "bank" and line.entry.a == ns.Log.IN and LogView.Visible(pair)))
         if kind and source and shown then
             lines[#lines + 1] = line
         end
@@ -386,11 +406,16 @@ function LogView.Lines(filters)
     return lines
 end
 
+-- The log's lines, if our rank may see the log (Ranks.lua).
 function LogView.Show(list, filters)
     local elements = {}
-    for _, line in ipairs(LogView.Lines(filters)) do
-        elements[#elements + 1] = { line = line }
+    local allowed = ns.Ranks.Can(ns.playerGUID, ns.Ranks.LOG)
+    if allowed then
+        for _, line in ipairs(LogView.Lines(filters)) do
+            elements[#elements + 1] = { line = line }
+        end
     end
     list.ScrollBox:SetDataProvider(CreateDataProvider(elements), ScrollBoxConstants and ScrollBoxConstants.RetainScrollPosition)
+    list.Empty:SetText(allowed and EMPTY or L["Your rank may not see the log."])
     list.Empty:SetShown(#elements == 0)
 end

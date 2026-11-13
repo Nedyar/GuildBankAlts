@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 - Options and permissions
+
+- **Options**, under Options > AddOns > Guild Bank Alts (or `/gbalts options`): the language of the addon's texts, this client's own, and the guild's options, shared with every member. Only the guild master changes the guild's; the others see them greyed out.
+- **Bank ranks**: the guild ranks whose characters are bank characters, a list the guild master edits. By default, `Banco`, in every client language (`Bank` no longer is one by default).
+- **Permissions, by guild rank**: whether it may see the log, make requests, accept them and reject them. By default, as before: every rank sees the log and makes requests; the bank ranks and the rank `Oficial` (or `Officer`) answer them. The guild master may do everything. An answer counts only if its author's rank may give it, and may see the bank character's items, also for answers given before a change.
+- **Who sees each bank character**, by guild rank: its items and its money, apart. By default, every rank sees everything. The guild master sees all of them, and a bank character its own. A bank character none of whose things one may see is not in the dropdown.
+- **A rank that may not see a bank character's items does not see the requests made to it either** (but its members' own), nor may answer them, nor sees its items in the log. One that may not see its money does not see its money in the log, nor in a tooltip of another line (money it gave another bank character then shows as the other's line).
+- These rights are kept by the addon: what a member may not see still reaches their client with the sync (no addon can keep it from them); the addon does not show it.
+- **Members on 0.3.2 and older keep working** with members on 0.4.0, but follow the old rules: the rank `Banco` (or `Bank`), and the old rights. They pass the guild master's record on, without the options; a member on 0.4.0 keeps the options it knew.
+
 ## 0.3.2 - Accepted requests
 
 - **Requests can be accepted**: an Accept button, beside Reject, for bank characters, officers and the guild master, on requests pending or partly delivered. It is enabled only if the bank character has enough of the item to spare: what it holds, less what its other accepted requests still await of it; else its tooltip says how many it has to spare. An accepted request can still be rejected. Its maker is told in the chat and cannot delete it. Its row in the list is green.

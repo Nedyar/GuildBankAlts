@@ -53,7 +53,7 @@ events:SetScript("OnEvent", function(self, event, name)
         -- Each part starts on its own, so a failure in one (reported as a normal
         -- Lua error) does not stop the others.
         for _, init in ipairs({ ns.Bank.Init, ns.Requests.Init, ns.Log.Init, ns.Deliveries.Init, ns.BankView.Init,
-                ns.MailToBank.Init, ns.Prepare.Init, ns.BagLocks.Init, ns.RequestList.Init, ns.GuildTab.Init }) do
+                ns.MailToBank.Init, ns.Prepare.Init, ns.BagLocks.Init, ns.RequestList.Init, ns.GuildTab.Init, ns.Options.Init }) do
             xpcall(init, geterrorhandler())
         end
     end
@@ -63,6 +63,7 @@ end)
 
 local function PrintHelp()
     ns.Print(L["/gbalts status - what the addon knows and is doing"])
+    ns.Print(L["/gbalts options - the addon's options, and the guild's: bank ranks and permissions"])
     ns.Print(L["/gbalts sync - ask the guild for missing data now"])
     ns.Print(L["/gbalts language [code|auto] - language of the addon's texts"])
     ns.Print(L["/gbalts debug - show the sync log in the chat"])
@@ -96,6 +97,8 @@ SlashCmdList.GUILDBANKALTS = function(message)
         PrintStatus()
     elseif lower == "sync" then
         ns.Sync.SendHello(true)
+    elseif lower == "options" or lower == "config" then
+        ns.Options.Open()
     elseif lower == "debug" then
         ns.debugEnabled = not ns.debugEnabled
         ns.Print(ns.debugEnabled and L["sync log on."] or L["sync log off."])

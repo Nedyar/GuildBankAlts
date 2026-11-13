@@ -9,10 +9,13 @@
 --     how many of the items a bank character delivered; and, apart (ac),
 --     its acceptance.
 -- Every client works out a request's state from them, in the same way. A
--- bank character, an officer or the guild master accepts a request, if the
--- bank character it was made to has enough of the item to spare (what it
--- holds, less what the other accepted requests still await of it), or
--- rejects it, accepted or not. A request is approved once its items are
+-- member whose rank may (Ranks.lua: by default bank characters, officers
+-- and the guild master) accepts a request, if the bank character it was
+-- made to has enough of the item to spare (what it holds, less what the
+-- other accepted requests still await of it), or rejects it, accepted or
+-- not; an answer counts only if its author's rank may give it, and may see
+-- the bank character's items. Only a
+-- member whose rank may make requests makes one. A request is approved once its items are
 -- all delivered, by trade or mail, in as many goes as it takes
 -- (Deliveries.lua counts them on the bank character's client); its maker's
 -- client then drops it, once it has told so. Its maker may delete it
@@ -76,10 +79,11 @@ local function AnswersByKey(guild)
     return byKey
 end
 
--- The earliest of several (guid, when) by those who may answer requests;
--- the lowest GUID among those of the same time.
-local function Earliest(guid, at, bestGuid, bestAt)
-    if Ranks.CanReject(guid) and (not bestAt or at < bestAt or (at == bestAt and guid < bestGuid)) then
+-- The earliest of several (guid, when) by those who may give that answer
+-- (flag: Ranks.ACCEPT or REJECT) to the requests made to bank
+-- (Ranks.MayAnswer); the lowest GUID among those of the same time.
+local function Earliest(flag, bank, guid, at, bestGuid, bestAt)
+    if Ranks.MayAnswer(guid, bank, flag) and (not bestAt or at < bestAt or (at == bestAt and guid < bestGuid)) then
         return guid, at
     end
     return bestGuid, bestAt
@@ -101,14 +105,14 @@ function Requests.State(request, answers)
     for _, entry in ipairs(answers or {}) do
         local answer = entry.answer
         if not answer then
-            accepter, acceptedAt = Earliest(entry.guid, entry.at, accepter, acceptedAt)
+            accepter, acceptedAt = Earliest(Ranks.ACCEPT, request.b, entry.guid, entry.at, accepter, acceptedAt)
         else
             if (answer.n or 0) > 0 then
                 delivered = delivered + answer.n
                 lastDelivery = math.max(lastDelivery, answer.u)
             end
             if answer.s == REJECTED then
-                rejecter, rejectedAt = Earliest(entry.guid, answer.u, rejecter, rejectedAt)
+                rejecter, rejectedAt = Earliest(Ranks.REJECT, request.b, entry.guid, answer.u, rejecter, rejectedAt)
             end
         end
     end
@@ -177,6 +181,13 @@ function Requests.WaitingFor(guild, bank)
     return count
 end
 
+-- Whether we see a request: our own, or one made to a bank character whose
+-- items our rank may see (Ranks.lua).
+function Requests.Visible(view)
+    return view.requester == ns.playerGUID
+        or (ns.playerGUID ~= nil and Ranks.CanSee(ns.playerGUID, view.request.b, Ranks.ITEMS))
+end
+
 -- What the buttons may do ---------------------------------------------------------
 
 -- Whether we may delete a request: our own, unless it is accepted or
@@ -186,17 +197,19 @@ function Requests.CanDelete(view)
 end
 
 -- Whether we may reject a request: someone else's, still open (accepted
--- too), and we are a bank character, an officer or the guild master.
+-- too), and our rank may reject the requests made to its bank character
+-- (Ranks.MayAnswer).
 function Requests.CanReject(view)
-    return view.requester ~= ns.playerGUID and not CLOSED[view.state] and Ranks.CanReject(ns.playerGUID)
+    return view.requester ~= ns.playerGUID and not CLOSED[view.state]
+        and Ranks.MayAnswer(ns.playerGUID, view.request.b, Ranks.REJECT)
 end
 
 -- Whether we may accept a request, stock aside (Requests.Spare): someone
--- else's, pending or partly delivered, and we are a bank character, an
--- officer or the guild master.
+-- else's, pending or partly delivered, and our rank may accept the requests
+-- made to its bank character (Ranks.MayAnswer).
 function Requests.MayAccept(view)
     return view.requester ~= ns.playerGUID and (view.state == "pending" or view.state == "partial")
-        and Ranks.CanReject(ns.playerGUID)
+        and Ranks.MayAnswer(ns.playerGUID, view.request.b, Ranks.ACCEPT)
 end
 
 -- How many of a request's item its bank character has to spare: what it
@@ -285,11 +298,14 @@ end
 -- Makes a request to a bank character for quantity of an item (its item
 -- string, as the bank character holds it), to be delivered in person or by
 -- mail (Requests.IN_PERSON, Requests.BY_MAIL). Returns its id, or nil and
--- why: "guild", "bank", "quantity", "delivery" or "full".
+-- why: "guild", "rank" (ours may not make requests), "bank", "quantity",
+-- "delivery" or "full".
 function Requests.Create(bank, itemString, quantity, note, delivery)
     local record = Own()
     if not record then
         return nil, "guild"
+    elseif not Ranks.Can(ns.playerGUID, Ranks.MAKE) then
+        return nil, "rank"
     end
     local itemID = tonumber(type(itemString) == "string" and itemString:match("^item:(%d+)") or nil)
     if not itemID or not Ranks.IsBank(bank) or bank == ns.playerGUID then
