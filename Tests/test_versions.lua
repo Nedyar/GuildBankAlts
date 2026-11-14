@@ -3,7 +3,7 @@ local H = ...
 -- Members on the last release and members on this version share one guild:
 -- both must keep talking, whoever holds the bank character. The release is
 -- taken from its git tag (H.Release); it runs on this LibGuildSync.
-local RELEASE = "v0.3.2"
+local RELEASE = "v0.4.0"
 
 H.section("Versions: against " .. RELEASE)
 local old = H.Release(RELEASE)
@@ -147,10 +147,10 @@ H.eq(told, bank.ns.VERSION_NUM > oldMember.ns.VERSION_NUM, "members on " .. RELE
 Errors(world, "log across versions")
 
 -- The guild's options (since 0.4.0), in the guild master's record: a member
--- on the release keeps taking that record and passing it on, the options
--- unknown to it; members on this version follow them. A copy passed on by
--- a member on the release has no options: a member on this version keeps
--- those it knew.
+-- on the release keeps taking that record and passing it on (a release
+-- before 0.4.0 without knowing the options); members on this version follow
+-- them. A copy passed on by a member on a release before 0.4.0 has no
+-- options: a member on this version keeps those it knew.
 world = H.NewWorld({ seed = 47, senderFormat = "short", strictWhispers = true })
 local master = world:NewClient("Guild Master", { rank = "GM", rankIndex = 0 })
 bank = world:NewClient("Bank Holder", { rank = "Banco", rankIndex = 4, containers = { [0] = { size = 16, [1] = { 2589, 20 } } } })
@@ -168,13 +168,18 @@ local function MasterCopy(client)
 end
 local copy = MasterCopy(oldMember)
 H.check(copy ~= nil and copy.t == master.ns.Data.GetOwnRecord(false).t, "a member on " .. RELEASE .. " keeps taking the guild master's record")
-H.check(oldMember.ns.Requests.Create(bank.guid, "item:2589", 1, "", 1) ~= nil, "and, not knowing the options, still makes requests")
+if oldMember.ns.Ranks.Options then
+    H.check(select(2, oldMember.ns.Requests.Create(bank.guid, "item:2589", 1, "", 1)) == "rank",
+        "and, knowing the options, follows them too")
+else
+    H.check(oldMember.ns.Requests.Create(bank.guid, "item:2589", 1, "", 1) ~= nil, "and, not knowing the options, still makes requests")
+end
 H.check(newMember.ns.Ranks.Options() ~= nil and not newMember.ns.Ranks.Can(newMember.guid, Ranks.MAKE)
     and select(2, newMember.ns.Requests.Create(bank.guid, "item:2589", 1, "", 1)) == "rank",
     "a member on this version follows them: it may not make requests")
 -- The guild master changes their record while the member on this version
 -- is away, and logs out: the member back gets it from the member on the
--- release, without the options.
+-- release (before 0.4.0, without the options).
 world:Logout(newMember)
 world:RunFor(30)
 H.check(master.ns.Requests.Create(bank.guid, "item:2589", 1, "", 1) ~= nil, "(the guild master's record changes)")

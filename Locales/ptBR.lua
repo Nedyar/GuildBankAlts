@@ -138,6 +138,7 @@ ns.RegisterLocale("ptBR", function(L)
     L["Keeps in your bags the %d it still lacks, from stacks kept for no request."] = "Reserva nas suas bolsas os %d que ainda faltam, de pilhas não reservadas."
     L["Your bank and bags hold only %d of them."] = "Seu banco e suas bolsas têm só %d."
     L["Open a mailbox to get its mail ready."] = "Abra uma caixa de correio para preparar a correspondência."
+    L["Temporarily unavailable, under review. Send the mail by hand."] = "Temporariamente indisponível, em revisão. Envie a correspondência manualmente."
     L["The mail already has items attached: send it or take them out first."] = "A correspondência já tem itens anexados: envie-a ou tire-os primeiro."
     L["Your bags hold none of it for this request: prepare it first."] = "Suas bolsas não têm nenhum para esta solicitação: prepare-a primeiro."
     L["Gets the mail to %s ready: its items, and %s cash on delivery per stack."] = "Prepara a correspondência para %s: os itens e %s por pilha na entrega."

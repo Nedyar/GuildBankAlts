@@ -138,6 +138,7 @@ ns.RegisterLocale("koKR", function(L)
     L["Keeps in your bags the %d it still lacks, from stacks kept for no request."] = "아직 부족한 %d개를 보관되지 않은 묶음에서 가방에 보관합니다."
     L["Your bank and bags hold only %d of them."] = "은행과 가방에 %d개뿐입니다."
     L["Open a mailbox to get its mail ready."] = "우편함을 열어 우편을 준비하세요."
+    L["Temporarily unavailable, under review. Send the mail by hand."] = "검토 중이라 일시적으로 사용할 수 없습니다. 우편을 직접 보내세요."
     L["The mail already has items attached: send it or take them out first."] = "우편에 이미 첨부된 아이템이 있습니다. 먼저 보내거나 빼세요."
     L["Your bags hold none of it for this request: prepare it first."] = "가방에 이 요청에 쓸 것이 없습니다. 먼저 준비하세요."
     L["Gets the mail to %s ready: its items, and %s cash on delivery per stack."] = "%s에게 보낼 우편을 준비합니다: 아이템과 묶음당 대금 청구 %s."

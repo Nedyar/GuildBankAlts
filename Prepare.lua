@@ -991,9 +991,18 @@ local function Release(view)
     end
 end
 
+-- The Mail button is off for now: on the server, sending the mails it got
+-- ready failed ("Internal mail database error"), and for a while the bank
+-- character's mail failed by hand too. Until that is understood, bank
+-- characters send the mail by hand. The tests turn it on, to keep the rest
+-- of it working.
+Prepare.mailPaused = true
+
 local function MailAction(view, ctx)
     local action = { action = "mail", text = L["Mail"] }
-    if job then
+    if Prepare.mailPaused then
+        action.tip = L["Temporarily unavailable, under review. Send the mail by hand."]
+    elseif job then
         action.tip = L["Another request is being got ready: wait a moment."]
     elseif not ns.MailToBank.MailboxOpen() then
         action.tip = L["Open a mailbox to get its mail ready."]
@@ -1040,7 +1049,8 @@ end
 -- Runs a button's action ("prepare", "release" or "mail") on a request.
 -- Returns true if it started (or, Release, was done).
 function Prepare.Run(view, action)
-    if not Ours(view) or (action == "mail" and (view.request.d ~= ns.Requests.BY_MAIL or not ns.MailToBank.MailboxOpen())) then
+    if not Ours(view) or (action == "mail" and (Prepare.mailPaused or view.request.d ~= ns.Requests.BY_MAIL
+            or not ns.MailToBank.MailboxOpen())) then
         return false
     elseif job then
         ns.Print(L["still getting the last request ready."])

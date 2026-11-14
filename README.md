@@ -107,6 +107,10 @@ window, and asks them for items.
       delivery of 30 copper per stack; press it again once it is sent for
       the rest. It takes the stacks kept for the request or for
       none, never another request's. Then check the mail and send it.
+      **Paused for now** (since 0.4.1): on the server, sending the mail it
+      got ready failed ("Internal mail database error"), and for a while
+      the bank character could not send items by mail by hand either. The
+      button stays greyed out, and bank characters send the mail by hand.
   - **Kept stacks.** A stack kept for a request shows a padlock in the top
     right corner of its icon in the game's bags; the padlock's tooltip says
     for which request. Moved within the bags, the stack stays kept and the

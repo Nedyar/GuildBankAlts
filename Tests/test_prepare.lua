@@ -210,6 +210,9 @@ local function Press(row, action)
 end
 
 H.section("Prepare: the buttons")
+-- Mail is off for now (Prepare.mailPaused, see "at a mailbox"); on, to
+-- test it.
+ns.Prepare.mailPaused = false
 local mailRow = Row(alice, byMail)
 local personRow = Row(mike, inPerson)
 -- The list, oldest first: a request made a minute later comes after.
@@ -276,6 +279,14 @@ Errors(world, "at the bank")
 H.section("Prepare: at a mailbox")
 OpenMailbox()
 H.check(not Button(personRow, "mail"):IsShown(), "an in-person request has no Mail")
+-- Mail is off for now, as the addon comes (Prepare.mailPaused): the mail is
+-- sent by hand.
+ns.Prepare.mailPaused = true
+H.check(Button(mailRow, "mail"):IsShown() and not Button(mailRow, "mail"):IsEnabled(), "for now, Mail is shown but off")
+H.eq(Tip(mailRow, "mail"), "Temporarily unavailable, under review. Send the mail by hand.", "and says so")
+H.check(not ns.Prepare.Run(mailRow.view, "mail") and Mail() == 0, "nor does it run otherwise")
+-- On again, to test the rest of it.
+ns.Prepare.mailPaused = false
 H.check(Button(mailRow, "mail"):IsEnabled() and Tip(mailRow, "mail"):find("Gets the mail to Alice Smith ready", 1, true),
     "at a mailbox, Mail is on, and says for whom")
 printed = #bank.printed

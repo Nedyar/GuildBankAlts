@@ -138,6 +138,7 @@ ns.RegisterLocale("ruRU", function(L)
     L["Keeps in your bags the %d it still lacks, from stacks kept for no request."] = "Откладывает в сумках недостающие %d из неотложенных стопок."
     L["Your bank and bags hold only %d of them."] = "В банке и сумках только %d."
     L["Open a mailbox to get its mail ready."] = "Откройте почтовый ящик, чтобы подготовить письмо."
+    L["Temporarily unavailable, under review. Send the mail by hand."] = "Временно недоступно: идёт проверка. Отправьте письмо вручную."
     L["The mail already has items attached: send it or take them out first."] = "К письму уже прикреплены предметы: отправьте его или сначала уберите их."
     L["Your bags hold none of it for this request: prepare it first."] = "В сумках нет ничего для этого запроса: сначала подготовьте его."
     L["Gets the mail to %s ready: its items, and %s cash on delivery per stack."] = "Готовит письмо для %s: предметы и наложенный платёж %s за стопку."

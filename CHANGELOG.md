@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1 - Mail button paused
+
+- **The Mail button is off for now.** On the server, sending the mail it got ready failed ("Internal mail database error"), and for a while the bank character could not send items by mail by hand either. Until that is understood, bank characters send a request's mail by hand; the button stays in its place, greyed out, its tooltip saying so. Prepare works as before.
+
 ## 0.4.0 - Options and permissions
 
 - **Options**, under Options > AddOns > Guild Bank Alts (or `/gbalts options`): the language of the addon's texts, this client's own, and the guild's options, shared with every member. Only the guild master changes the guild's; the others see them greyed out.

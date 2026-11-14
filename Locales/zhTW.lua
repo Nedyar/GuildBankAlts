@@ -138,6 +138,7 @@ ns.RegisterLocale("zhTW", function(L)
     L["Keeps in your bags the %d it still lacks, from stacks kept for no request."] = "在背包中保留仍缺的%d個，來自未保留的堆疊。"
     L["Your bank and bags hold only %d of them."] = "你的銀行和背包裡只有%d個。"
     L["Open a mailbox to get its mail ready."] = "打開郵箱以準備郵件。"
+    L["Temporarily unavailable, under review. Send the mail by hand."] = "暫時無法使用，正在審查中。請手動寄送郵件。"
     L["The mail already has items attached: send it or take them out first."] = "郵件已附有物品：請先寄出或取下。"
     L["Your bags hold none of it for this request: prepare it first."] = "你的背包中沒有可用於此申請的該物品：請先準備。"
     L["Gets the mail to %s ready: its items, and %s cash on delivery per stack."] = "準備寄給%s的郵件：附上物品，每組貨到付款%s。"
