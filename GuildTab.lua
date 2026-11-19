@@ -477,9 +477,16 @@ local function Setup()
     hooksecurefunc(communities, "SetDisplayMode", function()
         HidePage(false)
     end)
-    communities:HookScript("OnHide", function()
-        HidePage(true)
-    end)
+    -- A secure hook of the window's own OnHide (its XML calls the method by
+    -- name), never HookScript: a hooked script runs in the same execution
+    -- as the scripts of the window's children that follow it, and taints
+    -- them (the roster's rows, from which the game then refuses to change a
+    -- member's notes or rank).
+    if type(communities.OnHide) == "function" then
+        hooksecurefunc(communities, "OnHide", function()
+            HidePage(true)
+        end)
+    end
     -- The bank characters' Prepare and Mail buttons follow the bags, the
     -- bank, the mailbox and the mail being written (Prepare.lua).
     ns.On("PrepareChanged", function()

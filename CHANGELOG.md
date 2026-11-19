@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2 - Guild notes stay editable
+
+- **Changing a member's notes or rank from the guild roster is no longer blocked by the game because of this addon.** Closing the guild window ran the addon's code in the same step as the game's own windows closing, which could leave the roster marked as touched by an addon: the game then refused to change notes ("blocked from an action only available to the Blizzard UI") until the interface was reloaded. The addon now follows the window's closing in the way the game allows.
+
 ## 0.4.1 - Mail button paused
 
 - **The Mail button is off for now.** On the server, sending the mail it got ready failed ("Internal mail database error"), and for a while the bank character could not send items by mail by hand either. Until that is understood, bank characters send a request's mail by hand; the button stays in its place, greyed out, its tooltip saying so. Prepare works as before.
