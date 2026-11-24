@@ -6,12 +6,13 @@
 -- bag slot: locked, empty or with its bag), and a search box.
 -- Below: its slots, one by one as they are in its bags and bank, stacks as
 -- they are, looking like the game's guild bank (Blizzard_GuildBankUI):
--- columns of 2 x 7 slots on the guild bank's own slot art, inside its inner
--- frame, all at once: the slots are scaled down when they would not fit,
--- never scrolled. The search box dims the items whose name does not match,
--- as the game's does. Pointing at a bag lights up its slots. Pointing at an
--- item shows it; right-clicking it opens a withdrawal request
--- (RequestForm.lua).
+-- columns two slots across on the guild bank's own slot art, inside its
+-- inner frame, all at once: as many slots down a column as let them be the
+-- largest (the guild bank's 7 when they all fit at full size), scaled down
+-- when they would not fit, never scrolled. The search box dims the items
+-- whose name does not match, as the game's does. Pointing at a bag lights
+-- up its slots. Pointing at an item shows it; right-clicking it opens a
+-- withdrawal request (RequestForm.lua).
 -- At the bottom, in a thin gold frame like the guild bank's money: the
 -- guild bank's money on the left, the character's on the right, and a
 -- clock in the middle whose tooltip tells when each was last seen.
@@ -23,13 +24,16 @@ ns.BankView = BankView
 
 -- The guild bank's column (GuildBankFrameColumnTemplate): 100 x 311, two
 -- rows of 7 slots of 37 px, 7 px apart, the second 12 px right of the first.
+-- Its art (the top left 100 x 311 of a 128 x 512 texture) is a 3 px top
+-- edge, then 7 bands of 44 px, each a row of slots and the gap under it: a
+-- column of any height is drawn from them (Band).
 local COLUMN_TEXTURE = "Interface\\GuildBankFrame\\UI-GuildBankFrame-Slots"
-local COLUMN_TEXCOORDS = { 0, 0.78125, 0, 0.607421875 }
-local COLUMN_WIDTH, COLUMN_HEIGHT, COLUMN_GAP = 100, 311, 3
-local SLOTS_PER_COLUMN, ROWS = 14, 7
+local TEXTURE_WIDTH, TEXTURE_HEIGHT = 128, 512
+local COLUMN_WIDTH, COLUMN_GAP = 100, 3
+local ROWS = 7                 -- the guild bank's slots down a column
 local SLOT, ROW_GAP, TOP = 37, 7, 3
+local BAND = SLOT + ROW_GAP
 local SUBCOLUMN_X = { 7, 7 + 37 + 12 }
-local BAND_GAP = 6             -- between rows of columns
 -- The guild bank's inner frame: 32 px corners, its edges tiled between
 -- them, black inside; the first column sits 6 px in from its corner.
 local CORNERS = "Interface\\GuildBankFrame\\Corners"
@@ -199,25 +203,42 @@ function BankView.BagSlots(bank)
     return list
 end
 
--- How to lay out columns in a room of width x height: as many across as
--- give the largest scale (never above 1) with every column shown. Returns
--- the columns across, the rows, and the scale.
-function BankView.Fit(columns, width, height)
-    if columns < 1 then
+local function ColumnHeight(rows)
+    return TOP + rows * BAND
+end
+
+-- How to lay out a number of slots in a room of width x height: in columns
+-- two slots across, side by side, with as many slots down as give the
+-- largest scale (never above 1) with every slot shown; between as large,
+-- the nearest to the guild bank's 7. Returns the slots down a column, the
+-- columns and the scale.
+function BankView.Fit(slots, width, height)
+    if slots < 1 then
         -- Nothing to show (a bank character whose slots are not known yet).
-        return 1, 0, 1
+        return ROWS, 0, 1
     end
-    local best, bestAcross, bestRows = -1, 1, columns
-    for across = math.max(columns, 1), 1, -1 do
-        local rows = math.ceil(columns / across)
-        local needWidth = across * COLUMN_WIDTH + (across - 1) * COLUMN_GAP
-        local needHeight = rows * COLUMN_HEIGHT + (rows - 1) * BAND_GAP
-        local scale = math.min(width / needWidth, height / needHeight, 1)
-        if scale > best then
-            best, bestAcross, bestRows = scale, across, rows
+    local best, bestRows, bestColumns = -1, ROWS, 1
+    for rows = 1, math.ceil(slots / 2) do
+        local columns = math.ceil(slots / (2 * rows))
+        local needWidth = columns * COLUMN_WIDTH + (columns - 1) * COLUMN_GAP
+        local scale = math.min(width / needWidth, height / ColumnHeight(rows), 1)
+        if scale > best + 1e-9 or (scale > best - 1e-9 and math.abs(rows - ROWS) < math.abs(bestRows - ROWS)) then
+            best, bestRows, bestColumns = scale, rows, columns
         end
     end
-    return bestAcross, bestRows, best
+    return bestRows, bestColumns, best
+end
+
+-- Which of the art's 7 bands draws a column's row, of rows: the first and
+-- the last their own (the column's top and bottom), the middle ones in turn
+-- between them. 7 rows are drawn as the guild bank draws them.
+function BankView.Band(row, rows)
+    if row == rows then
+        return ROWS
+    elseif row == 1 then
+        return 1
+    end
+    return 2 + (row - 2) % (ROWS - 2)
 end
 
 -- Slots ----------------------------------------------------------------------------------
@@ -336,19 +357,58 @@ end
 
 local function CreateColumn(parent)
     local column = CreateFrame("Frame", nil, parent)
-    column:SetSize(COLUMN_WIDTH, COLUMN_HEIGHT)
-    column.Background = column:CreateTexture(nil, "BACKGROUND")
-    column.Background:SetTexture(COLUMN_TEXTURE)
-    column.Background:SetTexCoord(unpack(COLUMN_TEXCOORDS))
-    column.Background:SetAllPoints()
-    column.Slots = {}
-    for i = 1, SLOTS_PER_COLUMN do
-        local slot = CreateSlot(column)
-        local sub, row = i <= ROWS and 1 or 2, (i - 1) % ROWS
-        slot:SetPoint("TOPLEFT", SUBCOLUMN_X[sub], -(TOP + row * (SLOT + ROW_GAP)))
-        column.Slots[i] = slot
-    end
+    column:SetWidth(COLUMN_WIDTH)
+    column.Top = column:CreateTexture(nil, "BACKGROUND")
+    column.Top:SetTexture(COLUMN_TEXTURE)
+    column.Top:SetTexCoord(0, COLUMN_WIDTH / TEXTURE_WIDTH, 0, TOP / TEXTURE_HEIGHT)
+    column.Top:SetSize(COLUMN_WIDTH, TOP)
+    column.Top:SetPoint("TOPLEFT")
+    column.Bands, column.Slots = {}, {}
     return column
+end
+
+-- Makes a column rows slots down: its art, band by band, and its 2 x rows
+-- slots, the first rows down the left, the rest down the right. Slots it
+-- no longer has are hidden and emptied.
+local function ShapeColumn(column, rows)
+    if column.rows == rows then
+        return
+    end
+    column.rows = rows
+    column:SetHeight(ColumnHeight(rows))
+    for row = 1, math.max(rows, #column.Bands) do
+        local band = column.Bands[row]
+        if row > rows then
+            band:Hide()
+        else
+            if not band then
+                band = column:CreateTexture(nil, "BACKGROUND")
+                band:SetTexture(COLUMN_TEXTURE)
+                band:SetSize(COLUMN_WIDTH, BAND)
+                band:SetPoint("TOPLEFT", 0, -ColumnHeight(row - 1))
+                column.Bands[row] = band
+            end
+            local top = ColumnHeight(BankView.Band(row, rows) - 1)
+            band:SetTexCoord(0, COLUMN_WIDTH / TEXTURE_WIDTH, top / TEXTURE_HEIGHT, (top + BAND) / TEXTURE_HEIGHT)
+            band:Show()
+        end
+    end
+    for i = 1, math.max(2 * rows, #column.Slots) do
+        local slot = column.Slots[i]
+        if i > 2 * rows then
+            slot.item, slot.owner, slot.container = nil, nil, nil
+            slot:Hide()
+        else
+            if not slot then
+                slot = CreateSlot(column)
+                column.Slots[i] = slot
+            end
+            local sub, row = i <= rows and 1 or 2, (i - 1) % rows
+            slot:ClearAllPoints()
+            slot:SetPoint("TOPLEFT", SUBCOLUMN_X[sub], -ColumnHeight(row))
+            slot:Show()
+        end
+    end
 end
 
 -- Lights up the slots of a container (nil: none).
@@ -628,7 +688,7 @@ function BankView.Create(parent)
         BankView.Refresh(view)
     end)
     view.Canvas = CreateFrame("Frame", nil, view.Items)
-    view.Canvas:SetSize(COLUMN_WIDTH, COLUMN_HEIGHT)
+    view.Canvas:SetSize(COLUMN_WIDTH, ColumnHeight(ROWS))
 
     -- At the bottom, in a thin gold frame: the guild bank's money, the
     -- clock, the character's money.
@@ -662,17 +722,18 @@ function BankView.Create(parent)
     return view
 end
 
--- Lays out every column on the canvas, scaled so they all fit the frame.
+-- Lays out every slot on the canvas, in columns as tall as Fit says, scaled
+-- so they all fit the frame.
 local function LayOut(view, entry, cells)
-    local count = entry and entry.bank and math.ceil(#cells / SLOTS_PER_COLUMN) or 0
     local width = (view.Items:GetWidth() or 0) - 2 * INSET
     local height = (view.Items:GetHeight() or 0) - 2 * INSET
     if width <= 0 or height <= 0 then
         width, height = DEFAULT_WIDTH - 2 * INSET, DEFAULT_HEIGHT - 2 * INSET
     end
-    local across, rows, scale = BankView.Fit(count, width, height)
-    local needWidth = across * COLUMN_WIDTH + (across - 1) * COLUMN_GAP
-    view.layout = { across = across, rows = rows, scale = scale, columns = count, cells = cells }
+    local rows, count, scale = BankView.Fit(#cells, width, height)
+    local perColumn = 2 * rows
+    local needWidth = count * COLUMN_WIDTH + (count - 1) * COLUMN_GAP
+    view.layout = { rows = rows, scale = scale, columns = count, cells = cells }
     view.Canvas:SetScale(scale)
     view.Canvas:ClearAllPoints()
     -- Centred across, at the top; offsets are in the canvas's own scale.
@@ -683,11 +744,11 @@ local function LayOut(view, entry, cells)
             column = CreateColumn(view.Canvas)
             view.Columns[i] = column
         end
-        local row, col = math.floor((i - 1) / across), (i - 1) % across
+        ShapeColumn(column, rows)
         column:ClearAllPoints()
-        column:SetPoint("TOPLEFT", view.Canvas, "TOPLEFT", col * (COLUMN_WIDTH + COLUMN_GAP), -row * (COLUMN_HEIGHT + BAND_GAP))
-        for slotIndex, slot in ipairs(column.Slots) do
-            SetSlot(slot, cells[(i - 1) * SLOTS_PER_COLUMN + slotIndex], entry, view)
+        column:SetPoint("TOPLEFT", view.Canvas, "TOPLEFT", (i - 1) * (COLUMN_WIDTH + COLUMN_GAP), 0)
+        for slotIndex = 1, perColumn do
+            SetSlot(column.Slots[slotIndex], cells[(i - 1) * perColumn + slotIndex], entry, view)
         end
         column:Show()
     end

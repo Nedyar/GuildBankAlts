@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3 - Bank slots fill their room
+
+- **The Bank subtab's slots fill the room they have.** They were laid out in the guild bank's columns of 7 slots down, scaled down until they fitted across: a bank character with many slots got small slots in a single band at the top, and the bottom of the frame stayed empty. The columns now have as many slots down as make the slots the largest (the guild bank's 7 when all of them fit at full size), so they fill the frame's height too: 148 slots in the guild window come out about a fifth larger.
+
 ## 0.4.2 - Guild notes stay editable
 
 - **Changing a member's notes or rank from the guild roster is no longer blocked by the game because of this addon.** Closing the guild window ran the addon's code in the same step as the game's own windows closing, which could leave the roster marked as touched by an addon: the game then refused to change notes ("blocked from an action only available to the Blizzard UI") until the interface was reloaded. The addon now follows the window's closing in the way the game allows.

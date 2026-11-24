@@ -477,7 +477,7 @@ H.eq(view.Dropdown._text, "Bank Holder", "the dropdown shows the bank character"
 H.check(#view.Dropdown._menu == 1 and view.Dropdown._menu[1].kind == "radio", "and lists the bank characters to choose from")
 -- Its slots, one by one: the backpack's 16, the bag's 10, the bank's 48
 -- and the bank bag's 12 (the empty bag slots have none): 86, in columns
--- of 14 like the guild bank's: 7 columns, the last with 2 slots.
+-- two slots across like the guild bank's.
 local bankEntry = alice.ns.BankView.Banks(alice.ns.Data.CurrentGuild(false))[1]
 local cells = alice.ns.BankView.Cells(bankEntry.bank)
 H.eq(#cells, 86, "as many slots as it has, bags and bank")
@@ -485,18 +485,28 @@ H.check(cells[1].item.i == CLOTH and cells[1].item.n == 20 and cells[2].item.n =
 H.check(cells[5].item == nil and cells[17].item and cells[17].item.n == 5 and cells[17].container == 1, "empty slots too, then the next bag")
 H.check(cells[27].item and cells[27].item.n == 40 and cells[27].container == 6, "then the bank")
 H.check(cells[77].item and cells[77].item.i == HERB and cells[77].container == 7, "then the bank bag")
--- In the room the tests give (536 x 288 inside the frame), one row of 7 at
--- about 0.75 beats two rows of 4.
+-- In the room the tests give (536 x 288 inside the frame), 6 columns 8
+-- slots down, at about 0.81, beat the guild bank's 7 down (7 columns, at
+-- about 0.75, leaving the room's bottom empty).
 local layout = view.layout
-H.eq(layout.columns, 7, "seven columns of 14 slots")
-H.eq(layout.across, 7, "all in one row")
-H.eq(layout.rows, 1, "no second row")
-H.check(layout.scale > 0.74 and layout.scale < 0.75, "scaled down to fit, not scrolled (" .. layout.scale .. ")")
+H.eq(layout.rows, 8, "columns 8 slots down")
+H.eq(layout.columns, 6, "6 of them")
+H.check(layout.scale > 0.81 and layout.scale < 0.82, "scaled down to fit, not scrolled (" .. layout.scale .. ")")
 H.eq(view.Canvas._scale, layout.scale, "the slots are drawn at that scale")
-local lastColumn = view.Columns[7]
-H.check(not lastColumn.Slots[2].Blocked:IsShown() and lastColumn.Slots[3].Blocked:IsShown() and lastColumn.Slots[14].Blocked:IsShown(),
+local bands = view.Columns[1].Bands
+H.check(#bands == 8 and bands[1]._point[3] == -3 and bands[8]._point[3] == -(3 + 7 * 44),
+    "the guild bank's art, a band for each row, under its top edge")
+local lastColumn = view.Columns[6]
+H.check(not lastColumn.Slots[6].Blocked:IsShown() and lastColumn.Slots[7].Blocked:IsShown() and lastColumn.Slots[16].Blocked:IsShown(),
     "the slots past the 86th are blocked")
 H.eq(view.Columns[2]._point and view.Columns[2]._point[4], 103, "side by side, 3 px apart, as in the guild bank")
+H.check(lastColumn.Slots[9]._point and lastColumn.Slots[9]._point[2] == 56 and lastColumn.Slots[9]._point[3] == -3,
+    "a column's second half down its right, from the top")
+-- The slot showing a cell, wherever the layout puts it.
+local function SlotOf(index)
+    local perColumn = 2 * view.layout.rows
+    return view.Columns[math.ceil(index / perColumn)].Slots[(index - 1) % perColumn + 1]
+end
 local slot = view.Columns[1].Slots[1]
 H.check(slot.item ~= nil and slot.item.i == CLOTH and slot.Count:GetText() == 20, "a stack in the first slot")
 H.check(view.Columns[1].Slots[5].item == nil and not view.Columns[1].Slots[5].Blocked:IsShown(), "an empty slot")
@@ -516,10 +526,10 @@ H.check(not view.Bags[9].Icon:IsShown() and not view.Bags[9].Lock:IsShown(), "a 
 H.check(view.Bags[10].Lock:IsShown(), "a bank bag slot not bought, locked")
 -- Pointing at a bag lights up its slots, as the game's bank does.
 view.Bags[2]._scripts.OnEnter(view.Bags[2])
-H.check(view.Columns[2].Slots[3].Glow:IsShown() and view.Columns[2].Slots[12].Glow:IsShown(), "pointing at a bag lights up its slots")
-H.check(not view.Columns[1].Slots[1].Glow:IsShown() and not view.Columns[2].Slots[13].Glow:IsShown(), "and only those")
+H.check(SlotOf(17).Glow:IsShown() and SlotOf(26).Glow:IsShown(), "pointing at a bag lights up its slots")
+H.check(not SlotOf(16).Glow:IsShown() and not SlotOf(27).Glow:IsShown(), "and only those")
 view.Bags[2]._scripts.OnLeave(view.Bags[2])
-H.check(not view.Columns[2].Slots[3].Glow:IsShown(), "until the pointer leaves")
+H.check(not SlotOf(17).Glow:IsShown(), "until the pointer leaves")
 -- At the bottom: the guild bank's money (not seen yet), the character's,
 -- and the clock telling when each was seen.
 local function Coins(gold, silver, copper)
@@ -557,26 +567,61 @@ world:RunFor(150)
 ns.GuildTab.Refresh()
 H.eq(view.GuildMoney:GetText(), "In the bank: " .. Coins(9, 99, 99), "money that comes late is read too")
 rawset(env.GameTooltip, "AddLine", addLine)
--- How columns fit a room: the largest scale, never above 1, every column shown.
+-- How slots fit a room: in columns two across, as many down as give the
+-- largest scale, never above 1, every slot shown; between as large, the
+-- guild bank's 7 down, or the nearest.
 local Fit = alice.ns.BankView.Fit
-local across, rows, scale = Fit(2, 1000, 1000)
-H.check(across == 2 and rows == 1 and scale == 1, "room to spare: full size, never larger")
-for _, case in ipairs({ { 5, 536, 258 }, { 6, 536, 288 }, { 11, 536, 288 }, { 14, 536, 400 }, { 1, 50, 50 } }) do
+local rows, columns, scale = Fit(28, 1000, 1000)
+H.check(rows == 7 and columns == 2 and scale == 1, "room to spare: the guild bank's columns, full size, never larger")
+rows, columns, scale = Fit(28, 1000, 300)
+H.check(rows == 6 and columns == 3 and scale == 1, "a little short of it: one slot less down, still full size")
+-- A bank character of 148 slots in the guild window (585 x 250 inside the
+-- frame): 9 columns 9 down, not 11 of the guild bank's 7 down, at about
+-- 0.52 under an empty third of the room.
+rows, columns, scale = Fit(148, 585, 250)
+H.check(rows == 9 and columns == 9 and scale > 0.62 and scale < 0.63, ("148 slots in 585x250: 9 columns 9 down, at %.2f"):format(scale))
+for _, case in ipairs({ { 148, 585, 250 }, { 86, 536, 288 }, { 70, 536, 258 }, { 154, 536, 400 }, { 300, 900, 300 },
+        { 500, 1200, 700 }, { 3, 1000, 40 }, { 1, 50, 50 } }) do
     local count, width, height = case[1], case[2], case[3]
-    across, rows, scale = Fit(count, width, height)
-    local fits = across * rows >= count and (across * 103 - 3) * scale <= width + 1e-6 and (rows * 311 + (rows - 1) * 6) * scale <= height + 1e-6
+    rows, columns, scale = Fit(count, width, height)
+    local fits = columns * 2 * rows >= count and (columns * 103 - 3) * scale <= width + 1e-6 and (3 + rows * 44) * scale <= height + 1e-6
     local best = true
     for other = 1, count do
-        local otherRows = math.ceil(count / other)
-        local otherScale = math.min(width / (other * 103 - 3), height / (otherRows * 311 + (otherRows - 1) * 6), 1)
+        local otherColumns = math.ceil(count / (2 * other))
+        local otherScale = math.min(width / (otherColumns * 103 - 3), height / (3 + other * 44), 1)
         if otherScale > scale + 1e-9 then
             best = false
         end
     end
-    H.check(fits and best, ("%d columns in %dx%d: %d across, %d rows, scale %.2f, the best that fits"):format(count, width, height, across, rows, scale))
+    H.check(fits and best, ("%d slots in %dx%d: %d columns %d down, scale %.2f, the best that fits"):format(count, width, height, columns, rows, scale))
 end
-across, rows, scale = Fit(0, 536, 288)
-H.check(rows == 0 and scale > 0, "no columns: nothing to fit, at a scale the game takes")
+rows, columns, scale = Fit(0, 536, 288)
+H.check(columns == 0 and scale > 0, "no slots: nothing to fit, at a scale the game takes")
+-- Each row drawn with one of the guild bank's 7 bands: the first and the
+-- last their own, the middle ones in turn.
+local function Bands(count)
+    local list = {}
+    for row = 1, count do
+        list[row] = alice.ns.BankView.Band(row, count)
+    end
+    return table.concat(list, ",")
+end
+H.eq(Bands(7), "1,2,3,4,5,6,7", "7 rows: as the guild bank draws them")
+H.eq(Bands(9), "1,2,3,4,5,6,2,3,7", "more: the middle bands again")
+H.eq(Bands(3), "1,2,7", "fewer: the first, a middle one, the last")
+H.eq(Bands(1), "7", "a single row: the last, its bottom edge under the top's")
+-- A taller room (536 x 588 inside the frame): full size, columns 9 down
+-- (of those at full size, the nearest to the guild bank's 7), one less.
+view.Items._width, view.Items._height = 548, 600
+alice.ns.BankView.Refresh(view)
+H.check(view.layout.rows == 9 and view.layout.columns == 5 and view.layout.scale == 1, "a taller room: full size, columns 9 down")
+H.check(view.Columns[1].Slots[18]:IsShown() and view.Columns[1].Slots[17].item ~= nil and view.Columns[1].Bands[9]:IsShown()
+    and not view.Columns[6]:IsShown(), "the columns drawn again, one less")
+view.Items._width, view.Items._height = nil, nil
+alice.ns.BankView.Refresh(view)
+H.check(view.layout.rows == 8 and view.Columns[6]:IsShown() and view.Columns[1].Slots[1].item ~= nil, "back in the first room, as before")
+H.check(not view.Columns[1].Slots[17]:IsShown() and view.Columns[1].Slots[17].item == nil and not view.Columns[1].Bands[9]:IsShown(),
+    "the slots and bands a column no longer has hidden, and emptied")
 -- A character just given the bank's rank, whose client has not shared what
 -- it holds yet: listed greyed out, its tooltip saying why; the view keeps
 -- the bank character it knows.
@@ -591,7 +636,7 @@ H.check(menu[2].enabled == false and menu[2].tooltipTitle == "Zoe Newbank"
     and menu[2].tooltip == "Zoe Newbank has not shared what it holds yet: log in with it with this addon.", "greyed out, saying why")
 menu[2].setSelected(menu[2].data)
 Errors(world, "a bank character not known yet, chosen")
-H.check(view.Dropdown._text == "Bank Holder" and view.layout.columns == 7, "the view keeps the one it knows")
+H.check(view.Dropdown._text == "Bank Holder" and view.layout.columns == 6, "the view keeps the one it knows")
 -- With no bank character known, the one not known shows, saying so.
 local guildData = alice.ns.Data.CurrentGuild(false)
 local known = guildData.members[bank.guid]
@@ -608,7 +653,7 @@ end
 world:RosterChanged()
 world:RunFor(2)
 alice.ns.BankView.Refresh(view)
-H.check(#view.Dropdown._menu == 1 and view.Dropdown._text == "Bank Holder" and view.layout.columns == 7, "back as it was")
+H.check(#view.Dropdown._menu == 1 and view.Dropdown._text == "Bank Holder" and view.layout.columns == 6, "back as it was")
 Errors(world, "a bank character not known yet")
 -- The search dims what does not match, as the game's does.
 view.Search:SetText("12345")

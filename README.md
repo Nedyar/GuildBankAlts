@@ -30,8 +30,9 @@ window, and asks them for items.
   since it got the rank, is greyed out until it does). Next to it,
   its bag slots: the backpack, its bags, the bank and the bank bag slots
   (locked, empty or with their bag); pointing at one lights up its slots.
-  Below, all its slots at once on slots like the game's guild bank (scaled
-  down to fit), a search box, then the money of the game's guild bank (as
+  Below, all its slots at once on slots like the game's guild bank (in
+  columns as tall as make them the largest, scaled down to fit), a search
+  box, then the money of the game's guild bank (as
   last seen by any member who opened it) and the character's, in gold,
   silver and copper. The clock between them tells when each was last seen.
   Under it, **Send items** gets a mail to that bank character ready: the
